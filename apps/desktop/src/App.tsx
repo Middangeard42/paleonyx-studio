@@ -16,12 +16,17 @@ import {
   TooltipProvider,
   useLocalPreference,
 } from "@paleonyx/ui";
+import { applyAgentChange, loadHistory, revertAgentChange } from "@paleonyx/vcs";
 import {
-  applyAgentChange,
-  applyFileDiff,
-  loadHistory,
-  revertAgentChange,
-} from "@paleonyx/vcs";
+  EMPTY_WORKSPACE,
+  checkWritable,
+  closeBuffer,
+  editBuffer,
+  isProposalStale,
+  markSaved,
+  openBuffer,
+  refreshAfterWrite,
+} from "./workspace-files.js";
 import { CodeEditor } from "@paleonyx/editor";
 import { listProjectFiles } from "@paleonyx/indexing";
 import { DEFAULT_BUDGET_LIMITS, runAgentTask } from "@paleonyx/agent-core";
@@ -208,8 +213,13 @@ function Workspace({
 
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | undefined>();
-  const [openPaths, setOpenPaths] = useState<string[]>([]);
-  const [fileContents, setFileContents] = useState<Record<string, string>>({});
+  /**
+   * All buffer state — contents, which files are open, what is unsaved —
+   * lives in one tested value rather than several loosely-related pieces
+   * of component state (see workspace-files.ts).
+   */
+  const [workspace, setWorkspace] = useState(EMPTY_WORKSPACE);
+  const { openPaths, contents: fileContents, dirty: dirtyPaths } = workspace;
 
   const [contextFiles, setContextFiles] = useState<string[]>([]);
   const [taskType, setTaskType] = useState<AgentTaskType>("explain");
@@ -227,7 +237,6 @@ function Workspace({
   );
 
   const [activePanel, setActivePanel] = useState("files");
-  const [dirtyPaths, setDirtyPaths] = useState<Set<string>>(new Set());
 
   const changeStore = useMemo(() => new TauriChangeStore(), []);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -265,10 +274,12 @@ function Workspace({
     // target file has unsaved edits, applying would write over content
     // the user can still see in front of them — and the diff was computed
     // against a version that no longer reflects their intent either.
-    const unsaved = unsavedAmong(result.diff.map((d) => d.filePath));
-    if (unsaved.length > 0) {
+    const writable = checkWritable(workspace, result.diff);
+    if (!writable.ok) {
       setApplyError(
-        `Save your changes to ${unsaved.join(", ")} first — applying would overwrite them.`
+        `Save your changes to ${writable.unsaved.join(
+          ", "
+        )} first — applying would overwrite them.`
       );
       return;
     }
@@ -313,11 +324,11 @@ function Workspace({
     // protection. Without it, undoing a change to a file the user is
     // mid-edit in would write over their unsaved work — the reverse of
     // what an undo is for.
-    const unsaved = unsavedAmong(touched);
-    if (unsaved.length > 0) {
+    const writable = checkWritable(workspace, entry.record.diffs);
+    if (!writable.ok) {
       setUndoConflicts((prev) => ({
         ...prev,
-        [entry.record.id]: `Save your changes to ${unsaved.join(
+        [entry.record.id]: `Save your changes to ${writable.unsaved.join(
           ", "
         )} first — undoing would overwrite them.`,
       }));
@@ -365,29 +376,11 @@ function Workspace({
       if (!openPaths.includes(path)) continue;
       refreshed[path] = await fs.readFile(path);
     }
-    setFileContents((prev) => ({ ...prev, ...refreshed }));
-    setDirtyPaths((prev) => {
-      const next = new Set(prev);
-      // Only these files now match disk. Anything else the user was
-      // editing is still outstanding and stays marked.
-      for (const path of changedPaths) next.delete(path);
-      return next;
-    });
-  }
-
-  /** Files with unsaved edits that a change is about to overwrite. */
-  function unsavedAmong(paths: string[]): string[] {
-    return [...new Set(paths)].filter((path) => dirtyPaths.has(path));
+    setWorkspace((prev) => refreshAfterWrite(prev, refreshed));
   }
 
   function handleEditorChange(path: string, next: string) {
-    setFileContents((prev) => ({ ...prev, [path]: next }));
-    setDirtyPaths((prev) => {
-      if (prev.has(path)) return prev;
-      const next = new Set(prev);
-      next.add(path);
-      return next;
-    });
+    setWorkspace((prev) => editBuffer(prev, path, next));
   }
 
   const saveFile = useCallback(
@@ -395,12 +388,7 @@ function Workspace({
       const content = fileContents[path];
       if (content === undefined) return;
       await saveUserEdits(new Map([[path, content]]));
-      setDirtyPaths((prev) => {
-        if (!prev.has(path)) return prev;
-        const next = new Set(prev);
-        next.delete(path);
-        return next;
-      });
+      setWorkspace((prev) => markSaved(prev, path));
     },
     [fileContents]
   );
@@ -434,11 +422,6 @@ function Workspace({
         `${path} has unsaved changes. Close it and discard them?`
       );
       if (!discard) return;
-      setDirtyPaths((prev) => {
-        const next = new Set(prev);
-        next.delete(path);
-        return next;
-      });
     }
     closeTab(path);
   }
@@ -461,18 +444,18 @@ function Workspace({
 
   async function openFile(path: string) {
     setSelectedPath(path);
-    setOpenPaths((prev) => (prev.includes(path) ? prev : [...prev, path]));
+    setWorkspace((prev) => openBuffer(prev, path));
     if (!(path in fileContents)) {
       const content = await fs.readFile(path);
-      setFileContents((prev) => ({ ...prev, [path]: content }));
+      setWorkspace((prev) => openBuffer(prev, path, content));
     }
   }
 
   function closeTab(path: string) {
-    setOpenPaths((prev) => {
-      const next = prev.filter((p) => p !== path);
+    setWorkspace((prev) => {
+      const next = closeBuffer(prev, path);
       if (selectedPath === path) {
-        setSelectedPath(next[next.length - 1]);
+        setSelectedPath(next.openPaths[next.openPaths.length - 1]);
       }
       return next;
     });
@@ -519,15 +502,9 @@ function Workspace({
    * never disagree.
    */
   const proposalStale = useMemo(() => {
-    if (!result || result.diff.length === 0 || applied) return false;
-    return result.diff.some((diff) => {
-      const content = fileContents[diff.filePath];
-      // Not open in a buffer means nothing to compare against; the apply
-      // itself will read from disk and report honestly if it conflicts.
-      if (content === undefined) return false;
-      return !applyFileDiff(content, diff).ok;
-    });
-  }, [result, fileContents, applied]);
+    if (!result || applied) return false;
+    return isProposalStale(workspace, result.diff);
+  }, [result, workspace, applied]);
 
   return (
     <div className="flex h-screen w-screen flex-col bg-surface-0 font-ui text-text-primary">
