@@ -42,6 +42,8 @@ export interface AgentPanelProps {
   stale?: boolean;
   /** Re-runs the same task against the current files. */
   onRerun?: () => void;
+  /** False under read-only; disables task types that require a diff. */
+  canProposeEdits?: boolean;
 }
 
 export function AgentPanel(props: AgentPanelProps) {
@@ -72,6 +74,7 @@ export function AgentPanel(props: AgentPanelProps) {
             onSubmit={props.onSubmit}
             disabled={running}
             contextFileCount={props.contextFiles.length}
+            canProposeEdits={props.canProposeEdits}
           />
         </section>
 

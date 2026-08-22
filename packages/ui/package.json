@@ -16,6 +16,7 @@
   "dependencies": {
     "@paleonyx/shared-types": "workspace:*",
     "@paleonyx/system-profile": "workspace:*",
+    "@radix-ui/react-popover": "^1.1.2",
     "@radix-ui/react-separator": "^1.1.0",
     "@radix-ui/react-slot": "^1.1.0",
     "@radix-ui/react-tabs": "^1.1.1",

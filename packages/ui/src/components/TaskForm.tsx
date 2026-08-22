@@ -23,6 +23,12 @@ export interface TaskFormProps {
   onSubmit: () => void;
   disabled: boolean;
   contextFileCount: number;
+  /**
+   * False under read-only. The Bug Fix task exists to produce a diff, so
+   * offering it when the agent may not propose one would be a control
+   * that cannot do its job.
+   */
+  canProposeEdits?: boolean;
 }
 
 /**
@@ -37,6 +43,7 @@ export function TaskForm({
   onSubmit,
   disabled,
   contextFileCount,
+  canProposeEdits = true,
 }: TaskFormProps) {
   const active = TASK_TYPES.find((t) => t.value === taskType) ?? TASK_TYPES[0]!;
 
@@ -49,23 +56,31 @@ export function TaskForm({
       className="flex flex-col gap-2"
     >
       <div role="radiogroup" aria-label="Task type" className="flex gap-1">
-        {TASK_TYPES.map((type) => (
-          <button
-            key={type.value}
-            type="button"
-            role="radio"
-            aria-checked={type.value === taskType}
-            onClick={() => onTaskTypeChange(type.value)}
-            className={clsx(
-              "rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-micro",
-              type.value === taskType
-                ? "bg-accent text-accent-foreground"
-                : "bg-surface-2 text-text-secondary hover:text-text-primary"
-            )}
-          >
-            {type.label}
-          </button>
-        ))}
+        {TASK_TYPES.map((type) => {
+          const unavailable = type.value === "bug-fix" && !canProposeEdits;
+          return (
+            <button
+              key={type.value}
+              type="button"
+              role="radio"
+              aria-checked={type.value === taskType}
+              disabled={unavailable}
+              title={
+                unavailable ? "Not available while this project is read-only." : undefined
+              }
+              onClick={() => onTaskTypeChange(type.value)}
+              className={clsx(
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors duration-micro",
+                unavailable && "cursor-not-allowed opacity-40",
+                type.value === taskType
+                  ? "bg-accent text-accent-foreground"
+                  : "bg-surface-2 text-text-secondary hover:text-text-primary"
+              )}
+            >
+              {type.label}
+            </button>
+          );
+        })}
       </div>
       <textarea
         value={instructions}

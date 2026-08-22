@@ -15,6 +15,8 @@ export interface StatusBarProps {
    * without a tutorial (DESIGN.md §1.4).
    */
   unsavedCount?: number;
+  /** Omitted where the mode is fixed, e.g. the web harness. */
+  onPermissionModeChange?: (mode: PermissionMode) => void;
 }
 
 /**
@@ -29,6 +31,7 @@ export function StatusBar({
   budgetLimits,
   indexedFileCount,
   unsavedCount = 0,
+  onPermissionModeChange,
 }: StatusBarProps) {
   const budgetExhausted =
     budgetUsage.toolCalls >= budgetLimits.maxToolCalls || budgetUsage.tokens >= budgetLimits.maxTokens;
@@ -56,7 +59,7 @@ export function StatusBar({
           Budget: {budgetUsage.toolCalls}/{budgetLimits.maxToolCalls} tool calls ·{" "}
           {budgetUsage.tokens}/{budgetLimits.maxTokens} tokens
         </span>
-        <PermissionIndicator mode={permissionMode} />
+        <PermissionIndicator mode={permissionMode} onChange={onPermissionModeChange} />
       </div>
     </footer>
   );

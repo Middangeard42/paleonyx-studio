@@ -24,6 +24,8 @@ export { StatusBar } from "./components/StatusBar.js";
 export type { StatusBarProps } from "./components/StatusBar.js";
 export { PermissionIndicator } from "./components/PermissionIndicator.js";
 export type { PermissionIndicatorProps } from "./components/PermissionIndicator.js";
+export { PermissionModePicker } from "./components/PermissionModePicker.js";
+export type { PermissionModePickerProps } from "./components/PermissionModePicker.js";
 export { SkillLevelControl } from "./components/SkillLevelControl.js";
 export type { SkillLevelControlProps } from "./components/SkillLevelControl.js";
 export { TaskPlanCard } from "./components/TaskPlanCard.js";

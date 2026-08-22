@@ -284,6 +284,8 @@ export function App() {
 
           <StatusBar
             modelLabel={provider.model.label}
+            // Fixed here: the harness has no write path, so offering a
+            // mode change would promise something it cannot deliver.
             permissionMode={DEFAULT_PERMISSION_MODE}
             budgetUsage={budgetUsage}
             budgetLimits={DEFAULT_BUDGET_LIMITS}

@@ -15,11 +15,52 @@ export type PermissionMode =
  */
 export const DEFAULT_PERMISSION_MODE: PermissionMode = "suggest-only";
 
+/** Least to most permissive. Index into this to compare two modes. */
 export const PERMISSION_MODE_ORDER: readonly PermissionMode[] = [
   "read-only",
   "suggest-only",
   "auto-apply",
   "can-run-commands",
+];
+
+/**
+ * Predicates rather than scattered `mode === "..."` comparisons.
+ *
+ * agent-core enforces these; the UI reads the same functions to decide
+ * what to disable. One definition, so a control cannot offer something
+ * the enforcement layer will refuse — or worse, quietly permit something
+ * the UI thought it had disabled.
+ */
+export function canProposeEdits(mode: PermissionMode): boolean {
+  return mode !== "read-only";
+}
+
+export function canApplyWithoutApproval(mode: PermissionMode): boolean {
+  return mode === "auto-apply" || mode === "can-run-commands";
+}
+
+export function canRunCommands(mode: PermissionMode): boolean {
+  return mode === "can-run-commands";
+}
+
+/** True when moving from `from` to `to` grants the agent more latitude. */
+export function isMorePermissive(from: PermissionMode, to: PermissionMode): boolean {
+  return PERMISSION_MODE_ORDER.indexOf(to) > PERMISSION_MODE_ORDER.indexOf(from);
+}
+
+/**
+ * Modes the app can currently honour.
+ *
+ * `can-run-commands` is deliberately absent: no command-execution tool
+ * exists yet, so offering the mode would be a setting that grants
+ * nothing. It stays in the type and the order — the ranking and the
+ * plan are real — but is not selectable until there is something for it
+ * to permit.
+ */
+export const SELECTABLE_PERMISSION_MODES: readonly PermissionMode[] = [
+  "read-only",
+  "suggest-only",
+  "auto-apply",
 ];
 
 export interface PermissionModeDescriptor {

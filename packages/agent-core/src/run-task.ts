@@ -6,9 +6,11 @@ import type {
   ChatMessage,
   EscalationReason,
   FileSystemReader,
+  PermissionMode,
   SkillLevel,
   ToolCall,
 } from "@paleonyx/shared-types";
+import { DEFAULT_PERMISSION_MODE, canProposeEdits } from "@paleonyx/shared-types";
 import type { ChatModelProvider } from "@paleonyx/runtime";
 import { BudgetTracker, DEFAULT_BUDGET_LIMITS } from "./budget.js";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt.js";
@@ -20,6 +22,12 @@ export interface RunAgentTaskOptions {
   fs: FileSystemReader;
   input: AgentTaskInput;
   skillLevel: SkillLevel;
+  /**
+   * What the agent is allowed to do. Checked here rather than trusted to
+   * the UI: this is the auditable surface, and a caller that forgets to
+   * pass one gets the safe default rather than unrestricted behaviour.
+   */
+  permissionMode?: PermissionMode;
   budgetLimits?: typeof DEFAULT_BUDGET_LIMITS;
   /** Lets the UI render the Task Plan Card as soon as the plan is known. */
   onPlan?: (plan: AgentPlan) => void;
@@ -45,6 +53,16 @@ export async function runAgentTask(
 ): Promise<AgentTaskResult> {
   const budget = new BudgetTracker(options.budgetLimits ?? DEFAULT_BUDGET_LIMITS);
   const { taskType } = options.input;
+  const permissionMode = options.permissionMode ?? DEFAULT_PERMISSION_MODE;
+
+  if (taskType === "bug-fix" && !canProposeEdits(permissionMode)) {
+    return escalate(
+      taskType,
+      budget,
+      "permission-denied",
+      "This project is set to read-only, so the agent can explain code but not propose changes. Change the permission mode in the status bar to let it suggest edits."
+    );
+  }
 
   const fileContents: Record<string, string> = {};
   for (const [index, path] of options.input.targetFiles.entries()) {

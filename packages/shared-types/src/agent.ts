@@ -31,7 +31,9 @@ export type EscalationReason =
   | "budget-exhausted"
   | "ambiguous-instructions"
   | "tool-failure"
-  | "low-confidence";
+  | "low-confidence"
+  /** The current permission mode does not allow what was asked for. */
+  | "permission-denied";
 
 export interface AgentEscalation {
   reason: EscalationReason;

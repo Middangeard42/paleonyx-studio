@@ -6,6 +6,7 @@ const REASON_LABEL: Record<AgentEscalation["reason"], string> = {
   "ambiguous-instructions": "Instructions were ambiguous",
   "tool-failure": "A tool call failed",
   "low-confidence": "Low confidence in the result",
+  "permission-denied": "Not allowed in this mode",
 };
 
 export interface EscalationBannerProps {

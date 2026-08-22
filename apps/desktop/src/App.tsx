@@ -44,6 +44,8 @@ import type { ChatModelProvider } from "@paleonyx/runtime";
 import {
   DEFAULT_PERMISSION_MODE,
   DEFAULT_SKILL_LEVEL,
+  canApplyWithoutApproval,
+  canProposeEdits,
 } from "@paleonyx/shared-types";
 import type {
   AgentChangeRecord,
@@ -52,6 +54,7 @@ import type {
   BudgetUsage,
   HistoryEntry,
   ModelCatalog,
+  PermissionMode,
   ProjectFile,
   SkillLevel,
   SystemProfile,
@@ -363,6 +366,16 @@ function Workspace({
 
   const [activePanel, setActivePanel] = useState("files");
 
+  /**
+   * Per project, not per user (CLAUDE.md §6): letting the agent write
+   * freely in a scratch repo says nothing about wanting that in
+   * production code. Keyed by path so each project keeps its own answer.
+   */
+  const [permissionMode, setPermissionMode] = useLocalPreference<PermissionMode>(
+    `paleonyx.permissionMode:${projectRoot}`,
+    DEFAULT_PERMISSION_MODE
+  );
+
   const changeStore = useMemo(() => new TauriChangeStore(), []);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [applying, setApplying] = useState(false);
@@ -391,15 +404,27 @@ function Workspace({
     refreshHistory().catch(() => setHistory([]));
   }, [refreshHistory, projectRoot]);
 
-  async function handleApply() {
-    if (!result || result.diff.length === 0) return;
+  // Dropping to read-only while a diff-producing task is selected would
+  // leave the form on an option it now disables.
+  useEffect(() => {
+    if (!canProposeEdits(permissionMode) && taskType === "bug-fix") {
+      setTaskType("explain");
+    }
+  }, [permissionMode, taskType]);
+
+  /**
+   * Takes the task result explicitly rather than reading it from state,
+   * so auto-apply can run against a result the render has not yet seen.
+   */
+  async function applyResult(target: AgentTaskResult) {
+    if (target.diff.length === 0) return;
     setApplyError(null);
 
     // The agent patches what is on disk, not what is in the editor. If a
     // target file has unsaved edits, applying would write over content
     // the user can still see in front of them — and the diff was computed
     // against a version that no longer reflects their intent either.
-    const writable = checkWritable(workspace, result.diff);
+    const writable = checkWritable(workspace, target.diff);
     if (!writable.ok) {
       setApplyError(
         `Save your changes to ${writable.unsaved.join(
@@ -411,7 +436,9 @@ function Workspace({
 
     // Shadow history lives in the user's own .git (CLAUDE.md §10), so a
     // project without one needs a repo first. Creating it mutates their
-    // folder, so it is offered explicitly rather than done quietly.
+    // folder, so it is offered explicitly rather than done quietly —
+    // including under auto-apply, which skips the approval gate for
+    // changes, not for creating a repository.
     const status = await getGitStatus();
     if (!status.isRepository) {
       setNeedsRepo(true);
@@ -423,14 +450,14 @@ function Workspace({
       const record: AgentChangeRecord = {
         id: `${Date.now()}`,
         timestamp: new Date().toISOString(),
-        taskType: result.plan.taskType,
-        summary: result.plan.summary,
-        diffs: result.diff,
+        taskType: target.plan.taskType,
+        summary: target.plan.summary,
+        diffs: target.diff,
       };
       const outcome = await applyAgentChange(changeStore, record);
       if (outcome.ok) {
         setApplied(true);
-        await reloadChangedFiles(result.diff.map((d) => d.filePath));
+        await reloadChangedFiles(target.diff.map((d) => d.filePath));
         await refreshHistory();
       } else {
         setApplyError(outcome.conflicts.map((c) => c.conflict.message).join(" "));
@@ -440,6 +467,10 @@ function Workspace({
     } finally {
       setApplying(false);
     }
+  }
+
+  function handleApply() {
+    if (result) void applyResult(result);
   }
 
   async function handleUndo(entry: HistoryEntry) {
@@ -629,10 +660,23 @@ function Workspace({
         fs,
         input: { taskType, instructions, targetFiles: contextFiles },
         skillLevel,
+        permissionMode,
         onStatus: setStatusMessage,
       });
       setResult(taskResult);
       setBudgetUsage(taskResult.budgetUsage);
+
+      // Auto-apply skips the approval gate, nothing else: the plan and
+      // diff above were still produced, and the change is still recorded
+      // and undoable (CLAUDE.md §9).
+      if (
+        canApplyWithoutApproval(permissionMode) &&
+        !taskResult.escalation &&
+        taskResult.diff.length > 0
+      ) {
+        setStatusMessage("Applying…");
+        await applyResult(taskResult);
+      }
     } finally {
       setStatusMessage(null);
     }
@@ -782,6 +826,7 @@ function Workspace({
             applyError={applyError}
             stale={proposalStale}
             onRerun={handleRunTask}
+            canProposeEdits={canProposeEdits(permissionMode)}
           />
 
           <Panel title="History">
@@ -799,7 +844,8 @@ function Workspace({
 
       <StatusBar
         modelLabel={provider.model.label}
-        permissionMode={DEFAULT_PERMISSION_MODE}
+        permissionMode={permissionMode}
+        onPermissionModeChange={setPermissionMode}
         budgetUsage={budgetUsage}
         budgetLimits={DEFAULT_BUDGET_LIMITS}
         indexedFileCount={files.length}
