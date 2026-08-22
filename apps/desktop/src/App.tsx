@@ -6,6 +6,7 @@ import {
   Button,
   FileTree,
   ModelCatalogView,
+  OnboardingFlow,
   Panel,
   StatusBar,
   TabPanel,
@@ -37,20 +38,94 @@ import { TauriSystemProfileReader } from "./tauri-system-profile.js";
 
 const ZERO_BUDGET_USAGE: BudgetUsage = { toolCalls: 0, tokens: 0 };
 
+/**
+ * The catalog, hardware profile, and model/skill preferences live here
+ * rather than in `Workspace` because they're app-level, not per-project:
+ * onboarding runs before any project is open, and the same values feed
+ * the Settings-side Models panel afterward.
+ */
 export function App() {
   const [projectRoot, setProjectRoot] = useState<string | null>(null);
+  const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
+  const [systemProfile, setSystemProfile] = useState<SystemProfile | undefined>();
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  const [skillLevel, setSkillLevel] = useLocalPreference<SkillLevel>(
+    "paleonyx.skillLevel",
+    DEFAULT_SKILL_LEVEL
+  );
+  const [showTooLarge, setShowTooLarge] = useLocalPreference(
+    "paleonyx.models.showTooLarge",
+    false
+  );
+  const [selectedModelId, setSelectedModelId] = useLocalPreference<string | null>(
+    "paleonyx.selectedModelId",
+    null
+  );
+  const [onboarded, setOnboarded] = useLocalPreference(
+    "paleonyx.onboarding.completed",
+    false
+  );
+
+  useEffect(() => {
+    loadModelCatalog().then(setCatalog);
+    new TauriSystemProfileReader()
+      .read()
+      .then(setSystemProfile)
+      // Detection failing is a real, visible state — the catalog still
+      // renders, just unannotated (DESIGN.md §5.3: no silent failures).
+      .catch((error: unknown) =>
+        setProfileError(error instanceof Error ? error.message : String(error))
+      );
+  }, []);
+
+  const models = {
+    catalog,
+    systemProfile,
+    profileError,
+    skillLevel,
+    setSkillLevel,
+    showTooLarge,
+    setShowTooLarge,
+    selectedModelId,
+    setSelectedModelId,
+  };
 
   return (
     <ThemeProvider theme="dark">
       <TooltipProvider>
-        {projectRoot ? (
-          <Workspace projectRoot={projectRoot} />
+        {!onboarded ? (
+          <OnboardingFlow
+            skillLevel={skillLevel}
+            onSkillLevelChange={setSkillLevel}
+            catalog={catalog}
+            profile={systemProfile}
+            showTooLarge={showTooLarge}
+            onShowTooLargeChange={setShowTooLarge}
+            selectedModelId={selectedModelId}
+            onSelectModel={(entry) => setSelectedModelId(entry.id)}
+            onComplete={() => setOnboarded(true)}
+          />
+        ) : projectRoot ? (
+          <Workspace projectRoot={projectRoot} models={models} />
         ) : (
           <OpenProjectScreen onOpen={setProjectRoot} />
         )}
       </TooltipProvider>
     </ThemeProvider>
   );
+}
+
+interface ModelsState {
+  catalog: ModelCatalog | null;
+  systemProfile: SystemProfile | undefined;
+  profileError: string | null;
+  skillLevel: SkillLevel;
+  setSkillLevel: (level: SkillLevel) => void;
+  showTooLarge: boolean;
+  setShowTooLarge: (show: boolean) => void;
+  selectedModelId: string | null;
+  setSelectedModelId: (id: string | null) => void;
 }
 
 function OpenProjectScreen({ onOpen }: { onOpen: (path: string) => void }) {
@@ -90,15 +165,31 @@ function OpenProjectScreen({ onOpen }: { onOpen: (path: string) => void }) {
   );
 }
 
-function Workspace({ projectRoot }: { projectRoot: string }) {
+function Workspace({
+  projectRoot,
+  models,
+}: {
+  projectRoot: string;
+  models: ModelsState;
+}) {
   const fs = useMemo(() => new TauriFileSystem(), []);
+  const {
+    catalog,
+    systemProfile,
+    profileError,
+    skillLevel,
+    setSkillLevel,
+    showTooLarge,
+    setShowTooLarge,
+    selectedModelId,
+    setSelectedModelId,
+  } = models;
 
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | undefined>();
   const [openPaths, setOpenPaths] = useState<string[]>([]);
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
 
-  const [skillLevel, setSkillLevel] = useState<SkillLevel>(DEFAULT_SKILL_LEVEL);
   const [contextFiles, setContextFiles] = useState<string[]>([]);
   const [taskType, setTaskType] = useState<AgentTaskType>("explain");
   const [instructions, setInstructions] = useState("");
@@ -111,29 +202,10 @@ function Workspace({ projectRoot }: { projectRoot: string }) {
   );
 
   const [activePanel, setActivePanel] = useState("files");
-  const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
-  const [systemProfile, setSystemProfile] = useState<SystemProfile | undefined>();
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const [showTooLarge, setShowTooLarge] = useLocalPreference(
-    "paleonyx.models.showTooLarge",
-    false
-  );
 
   useEffect(() => {
     listProjectFiles(fs).then(setFiles);
   }, [fs, projectRoot]);
-
-  useEffect(() => {
-    loadModelCatalog().then(setCatalog);
-    new TauriSystemProfileReader()
-      .read()
-      .then(setSystemProfile)
-      // Detection failing is a real, visible state — the catalog still
-      // renders, just unannotated (DESIGN.md §5.3: no silent failures).
-      .catch((error: unknown) =>
-        setProfileError(error instanceof Error ? error.message : String(error))
-      );
-  }, []);
 
   // Desktop is where local models are actually expected to run; still
   // never assumed silently — the status bar always names whichever
@@ -141,14 +213,15 @@ function Workspace({ projectRoot }: { projectRoot: string }) {
   useEffect(() => {
     let cancelled = false;
     pingOllama().then((reachable) => {
-      if (reachable && !cancelled) {
-        setProvider(new OllamaAdapter({ modelId: "llama3.1", modelLabel: "Ollama: llama3.1" }));
-      }
+      if (!reachable || cancelled) return;
+      const modelId = selectedModelId ?? catalog?.installedIds[0];
+      if (!modelId) return;
+      setProvider(new OllamaAdapter({ modelId, modelLabel: `Ollama: ${modelId}` }));
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedModelId, catalog]);
 
   async function openFile(path: string) {
     setSelectedPath(path);
@@ -224,8 +297,8 @@ function Workspace({ projectRoot }: { projectRoot: string }) {
                   profile={systemProfile}
                   showTooLarge={showTooLarge}
                   onShowTooLargeChange={setShowTooLarge}
-                  activeModelId={provider.model.id}
-                  onSelect={() => {}}
+                  activeModelId={selectedModelId ?? undefined}
+                  onSelect={(entry) => setSelectedModelId(entry.id)}
                 />
               ) : (
                 <p className="text-sm text-text-tertiary">Loading model catalog…</p>

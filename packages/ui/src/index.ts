@@ -45,3 +45,7 @@ export type { SystemProfileSummaryProps } from "./components/SystemProfileSummar
 export { ModelCatalogView } from "./components/ModelCatalogView.js";
 export type { ModelCatalogViewProps } from "./components/ModelCatalogView.js";
 export { useLocalPreference } from "./hooks/useLocalPreference.js";
+export { OnboardingFlow } from "./components/onboarding/OnboardingFlow.js";
+export type { OnboardingFlowProps } from "./components/onboarding/OnboardingFlow.js";
+export { SkillLevelCards } from "./components/onboarding/SkillLevelCards.js";
+export type { SkillLevelCardsProps } from "./components/onboarding/SkillLevelCards.js";

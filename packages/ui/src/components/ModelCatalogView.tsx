@@ -80,6 +80,8 @@ export function ModelCatalogView({
     : assessed.filter((item) => item.assessment?.fit !== "too-large");
 
   const installed = new Set(catalog.installedIds);
+  const activeEntry = catalog.entries.find((entry) => entry.id === activeModelId);
+  const activeNeedsDownload = activeEntry && !installed.has(activeEntry.id);
 
   return (
     <div className="flex flex-col gap-3">
@@ -95,6 +97,16 @@ export function ModelCatalogView({
             : `Updated ${catalog.retrievedAt}`}
         </span>
       </div>
+
+      {activeNeedsDownload && (
+        <p className="rounded-md border border-status-info/30 bg-status-info/10 p-2.5 text-xs text-text-secondary">
+          {activeEntry.label} isn&apos;t downloaded yet. Run{" "}
+          <code className="rounded bg-surface-3 px-1 py-0.5 font-mono text-text-primary">
+            ollama pull {activeEntry.id}
+          </code>{" "}
+          to fetch it — Paleonyx can&apos;t start a download for you yet.
+        </p>
+      )}
 
       <ul className="flex flex-col gap-1.5">
         {visible.map(({ entry, assessment }) => (

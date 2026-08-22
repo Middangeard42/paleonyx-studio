@@ -5,6 +5,7 @@ import {
   AgentPanel,
   FileTree,
   ModelCatalogView,
+  OnboardingFlow,
   Panel,
   StatusBar,
   TabPanel,
@@ -43,7 +44,14 @@ export function App() {
   const [openPaths, setOpenPaths] = useState<string[]>([]);
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
 
-  const [skillLevel, setSkillLevel] = useState<SkillLevel>(DEFAULT_SKILL_LEVEL);
+  // Persisted, not per-session: skill level is a per-user preference
+  // (CLAUDE.md §5), and DEFAULT_SKILL_LEVEL exists only as the
+  // pre-onboarding fallback, never as a value a real session silently
+  // runs under.
+  const [skillLevel, setSkillLevel] = useLocalPreference<SkillLevel>(
+    "paleonyx.skillLevel",
+    DEFAULT_SKILL_LEVEL
+  );
   const [contextFiles, setContextFiles] = useState<string[]>([]);
   const [taskType, setTaskType] = useState<AgentTaskType>("explain");
   const [instructions, setInstructions] = useState("");
@@ -61,6 +69,14 @@ export function App() {
     "paleonyx.models.showTooLarge",
     false
   );
+  const [onboarded, setOnboarded] = useLocalPreference(
+    "paleonyx.onboarding.completed",
+    false
+  );
+  const [selectedModelId, setSelectedModelId] = useLocalPreference<string | null>(
+    "paleonyx.selectedModelId",
+    null
+  );
 
   useEffect(() => {
     listProjectFiles(fs).then(setFiles);
@@ -76,14 +92,18 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     pingOllama().then((reachable) => {
-      if (reachable && !cancelled) {
-        setProvider(new OllamaAdapter({ modelId: "llama3.1", modelLabel: "Ollama: llama3.1" }));
-      }
+      if (!reachable || cancelled) return;
+      // The user's explicit choice wins; otherwise fall back to whatever
+      // is genuinely installed rather than guessing at a model name that
+      // may not be present.
+      const modelId = selectedModelId ?? catalog?.installedIds[0];
+      if (!modelId) return;
+      setProvider(new OllamaAdapter({ modelId, modelLabel: `Ollama: ${modelId}` }));
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedModelId, catalog]);
 
   async function openFile(path: string) {
     setSelectedPath(path);
@@ -132,6 +152,26 @@ export function App() {
 
   const activeTab = selectedPath && openPaths.includes(selectedPath) ? selectedPath : openPaths[0];
 
+  if (!onboarded) {
+    return (
+      <ThemeProvider theme="dark">
+        <TooltipProvider>
+          <OnboardingFlow
+            skillLevel={skillLevel}
+            onSkillLevelChange={setSkillLevel}
+            catalog={catalog}
+            profile={undefined}
+            showTooLarge={showTooLarge}
+            onShowTooLargeChange={setShowTooLarge}
+            selectedModelId={selectedModelId}
+            onSelectModel={(entry) => setSelectedModelId(entry.id)}
+            onComplete={() => setOnboarded(true)}
+          />
+        </TooltipProvider>
+      </ThemeProvider>
+    );
+  }
+
   return (
     <ThemeProvider theme="dark">
       <TooltipProvider>
@@ -157,8 +197,8 @@ export function App() {
                       profile={undefined}
                       showTooLarge={showTooLarge}
                       onShowTooLargeChange={setShowTooLarge}
-                      activeModelId={provider.model.id}
-                      onSelect={() => {}}
+                      activeModelId={selectedModelId ?? undefined}
+                      onSelect={(entry) => setSelectedModelId(entry.id)}
                     />
                   ) : (
                     <p className="text-sm text-text-tertiary">Loading model catalog…</p>
