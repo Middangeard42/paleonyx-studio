@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Boxes, Files } from "lucide-react";
+import { Boxes, Files, FolderOpen } from "lucide-react";
 import {
   ActivityBar,
   AgentPanel,
@@ -57,6 +57,7 @@ import type {
   SystemProfile,
 } from "@paleonyx/shared-types";
 import { TauriFileSystem, openProject } from "./tauri-filesystem.js";
+import { openFolderDialog } from "./tauri-dialog.js";
 import { TauriSystemProfileReader } from "./tauri-system-profile.js";
 import {
   TauriChangeStore,
@@ -247,10 +248,28 @@ function OpenProjectScreen({ onOpen }: { onOpen: (path: string) => void }) {
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  async function handleOpen() {
+  const open = useCallback(
+    async (candidate: string) => {
+      try {
+        await openProject(candidate);
+        onOpen(candidate);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [onOpen]
+  );
+
+  async function handleBrowse() {
+    setError(null);
     try {
-      await openProject(path);
-      onOpen(path);
+      const picked = await openFolderDialog();
+      // Cancelling is an ordinary outcome, not an error.
+      if (picked === null) return;
+      // Fill the field as well as opening, so a rejected path is visible
+      // rather than the failure appearing to come from nowhere.
+      setPath(picked);
+      await open(picked);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -261,18 +280,32 @@ function OpenProjectScreen({ onOpen }: { onOpen: (path: string) => void }) {
       <div className="flex w-96 flex-col gap-3">
         <h1 className="text-lg font-medium">Open a project</h1>
         <p className="text-sm text-text-secondary">
-          Paste an absolute path to a folder. (A native folder picker is a
-          near-term follow-up — v0 keeps this to the one path this app
-          actually needs, per CLAUDE.md's "no speculative abstraction.")
+          Choose a folder, or paste an absolute path to one.
         </p>
+        <Button variant="primary" onClick={handleBrowse}>
+          <FolderOpen size={14} />
+          Browse for a folder…
+        </Button>
+        <div className="flex items-center gap-2 text-xs text-text-tertiary">
+          <span className="h-px flex-1 bg-border-subtle" />
+          or paste a path
+          <span className="h-px flex-1 bg-border-subtle" />
+        </div>
         <input
           value={path}
           onChange={(event) => setPath(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && path.trim().length > 0) void open(path);
+          }}
           placeholder="C:\path\to\project"
           className="rounded-md border border-border-subtle bg-surface-2 p-2 text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />
         {error && <p className="text-sm text-status-danger">{error}</p>}
-        <Button variant="primary" onClick={handleOpen} disabled={path.trim().length === 0}>
+        <Button
+          variant="secondary"
+          onClick={() => void open(path)}
+          disabled={path.trim().length === 0}
+        >
           Open
         </Button>
       </div>

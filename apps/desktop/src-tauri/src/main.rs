@@ -10,6 +10,7 @@ use commands::ProjectState;
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(ProjectState::default())
         .invoke_handler(tauri::generate_handler![
             commands::open_project,
