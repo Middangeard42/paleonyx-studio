@@ -18,6 +18,7 @@ import {
 } from "@paleonyx/ui";
 import {
   applyAgentChange,
+  applyFileDiff,
   loadHistory,
   revertAgentChange,
 } from "@paleonyx/vcs";
@@ -457,6 +458,25 @@ function Workspace({
 
   const activeTab = selectedPath && openPaths.includes(selectedPath) ? selectedPath : openPaths[0];
 
+  /**
+   * Whether the current proposal still fits the files.
+   *
+   * Tested by actually running the patch against the current buffer
+   * rather than by tracking edits — the same code that would perform the
+   * apply decides whether it can, so the preview and the real attempt can
+   * never disagree.
+   */
+  const proposalStale = useMemo(() => {
+    if (!result || result.diff.length === 0 || applied) return false;
+    return result.diff.some((diff) => {
+      const content = fileContents[diff.filePath];
+      // Not open in a buffer means nothing to compare against; the apply
+      // itself will read from disk and report honestly if it conflicts.
+      if (content === undefined) return false;
+      return !applyFileDiff(content, diff).ok;
+    });
+  }, [result, fileContents, applied]);
+
   return (
     <div className="flex h-screen w-screen flex-col bg-surface-0 font-ui text-text-primary">
       <div className="flex min-h-0 flex-1">
@@ -570,6 +590,8 @@ function Workspace({
             applying={applying}
             applied={applied}
             applyError={applyError}
+            stale={proposalStale}
+            onRerun={handleRunTask}
           />
 
           <Panel title="History">

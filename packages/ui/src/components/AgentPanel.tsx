@@ -33,6 +33,15 @@ export interface AgentPanelProps {
   applying?: boolean;
   applyError?: string | null;
   applied?: boolean;
+  /**
+   * True when the files have changed since this was proposed, so the
+   * diff no longer fits. Detected up front rather than on failure — a
+   * proposal that cannot land should not present a button that looks
+   * like it will.
+   */
+  stale?: boolean;
+  /** Re-runs the same task against the current files. */
+  onRerun?: () => void;
 }
 
 export function AgentPanel(props: AgentPanelProps) {
@@ -90,6 +99,8 @@ export function AgentPanel(props: AgentPanelProps) {
                     applying={props.applying ?? false}
                     applied={props.applied ?? false}
                     error={props.applyError ?? null}
+                    stale={props.stale ?? false}
+                    onRerun={props.onRerun}
                   />
                 )}
               </>
@@ -113,17 +124,43 @@ function ApplyGate({
   applying,
   applied,
   error,
+  stale,
+  onRerun,
 }: {
   onApply: () => void;
   applying: boolean;
   applied: boolean;
   error: string | null;
+  stale: boolean;
+  onRerun?: () => void;
 }) {
   if (applied) {
     return (
       <p className="rounded-md border border-status-success/40 bg-status-success/10 p-2.5 text-xs text-text-secondary">
         Applied and recorded. You can undo it from the History panel.
       </p>
+    );
+  }
+
+  // A stale proposal was written against a version of the file that no
+  // longer exists. Saying only "this can't be applied" leaves the user
+  // stuck holding something broken; the useful information is that their
+  // own edit is the reason, that it is safe, and what to do next
+  // (DESIGN.md §5.3).
+  if (stale) {
+    return (
+      <div className="flex flex-col gap-2 rounded-md border border-status-warning/40 bg-status-warning/10 p-2.5">
+        <p className="text-xs text-text-secondary">
+          You&apos;ve edited these files since this was suggested, so it no
+          longer fits. Your changes are untouched — this suggestion is just out
+          of date now.
+        </p>
+        {onRerun && (
+          <Button variant="secondary" size="sm" onClick={onRerun} className="self-start">
+            Suggest a fix for the current version
+          </Button>
+        )}
+      </div>
     );
   }
 
