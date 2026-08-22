@@ -8,3 +8,4 @@ export * from "./project.js";
 export * from "./filesystem.js";
 export * from "./system-profile.js";
 export * from "./model-catalog.js";
+export * from "./history.js";

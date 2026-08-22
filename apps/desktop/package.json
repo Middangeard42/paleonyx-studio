@@ -17,6 +17,7 @@
     "@paleonyx/shared-types": "workspace:*",
     "@paleonyx/system-profile": "workspace:*",
     "@paleonyx/ui": "workspace:*",
+    "@paleonyx/vcs": "workspace:*",
     "@tauri-apps/api": "^2.1.1",
     "lucide-react": "^0.451.0",
     "react": "^18.3.1",

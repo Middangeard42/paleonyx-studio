@@ -20,14 +20,36 @@ pub struct ProjectFileDto {
 /// Resolves `requested` against `root` and rejects anything that
 /// canonicalizes outside of it — the guard against `../../etc/passwd`
 /// -style path traversal escaping the opened project.
-fn resolve_within_root(root: &Path, requested: &str) -> Result<PathBuf, String> {
-    let candidate = root.join(requested);
+///
+/// Shared by the read and write paths on purpose: the agent must not
+/// gain any wider filesystem reach by writing than it has by reading
+/// (CLAUDE.md §2).
+pub fn resolve_within_root(root: &Path, requested: &str) -> Result<PathBuf, String> {
     let canonical_root = root
         .canonicalize()
         .map_err(|e| format!("Could not resolve project root: {e}"))?;
-    let canonical_candidate = candidate
-        .canonicalize()
-        .map_err(|e| format!("Could not resolve path '{requested}': {e}"))?;
+    let candidate = canonical_root.join(requested);
+
+    // A file being created for the first time has nothing to
+    // canonicalize, so fall back to resolving its parent directory and
+    // re-appending the name. Without this, writing a new file would be
+    // rejected as unresolvable rather than allowed.
+    let canonical_candidate = match candidate.canonicalize() {
+        Ok(resolved) => resolved,
+        Err(_) => {
+            let parent = candidate
+                .parent()
+                .ok_or_else(|| format!("Path '{requested}' has no parent directory."))?;
+            let canonical_parent = parent
+                .canonicalize()
+                .map_err(|e| format!("Could not resolve path '{requested}': {e}"))?;
+            let name = candidate
+                .file_name()
+                .ok_or_else(|| format!("Path '{requested}' has no file name."))?;
+            canonical_parent.join(name)
+        }
+    };
+
     if !canonical_candidate.starts_with(&canonical_root) {
         return Err(format!("Path '{requested}' is outside the opened project."));
     }

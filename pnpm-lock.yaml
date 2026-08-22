@@ -53,6 +53,9 @@ importers:
       '@paleonyx/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@paleonyx/vcs':
+        specifier: workspace:*
+        version: link:../../packages/vcs
       '@tauri-apps/api':
         specifier: ^2.1.1
         version: 2.11.1

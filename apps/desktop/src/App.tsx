@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Boxes, Files } from "lucide-react";
 import {
   ActivityBar,
@@ -12,9 +12,15 @@ import {
   TabPanel,
   Tabs,
   ThemeProvider,
+  Timeline,
   TooltipProvider,
   useLocalPreference,
 } from "@paleonyx/ui";
+import {
+  applyAgentChange,
+  loadHistory,
+  revertAgentChange,
+} from "@paleonyx/vcs";
 import { CodeEditor } from "@paleonyx/editor";
 import { listProjectFiles } from "@paleonyx/indexing";
 import { DEFAULT_BUDGET_LIMITS, runAgentTask } from "@paleonyx/agent-core";
@@ -25,9 +31,11 @@ import {
   DEFAULT_SKILL_LEVEL,
 } from "@paleonyx/shared-types";
 import type {
+  AgentChangeRecord,
   AgentTaskResult,
   AgentTaskType,
   BudgetUsage,
+  HistoryEntry,
   ModelCatalog,
   ProjectFile,
   SkillLevel,
@@ -35,6 +43,11 @@ import type {
 } from "@paleonyx/shared-types";
 import { TauriFileSystem, openProject } from "./tauri-filesystem.js";
 import { TauriSystemProfileReader } from "./tauri-system-profile.js";
+import {
+  TauriChangeStore,
+  getGitStatus,
+  initGitRepository,
+} from "./tauri-change-store.js";
 
 const ZERO_BUDGET_USAGE: BudgetUsage = { toolCalls: 0, tokens: 0 };
 
@@ -203,9 +216,114 @@ function Workspace({
 
   const [activePanel, setActivePanel] = useState("files");
 
+  const changeStore = useMemo(() => new TauriChangeStore(), []);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [applying, setApplying] = useState(false);
+  const [applied, setApplied] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [undoingId, setUndoingId] = useState<string | undefined>();
+  const [undoConflicts, setUndoConflicts] = useState<Record<string, string>>({});
+  const [needsRepo, setNeedsRepo] = useState(false);
+
   useEffect(() => {
     listProjectFiles(fs).then(setFiles);
   }, [fs, projectRoot]);
+
+  const refreshHistory = useCallback(async () => {
+    // A project that isn't a repo yet simply has no history — not an
+    // error, and not a reason to prompt before the agent needs to write.
+    const status = await getGitStatus();
+    if (!status.isRepository) {
+      setHistory([]);
+      return;
+    }
+    setHistory(await loadHistory(changeStore));
+  }, [changeStore]);
+
+  useEffect(() => {
+    refreshHistory().catch(() => setHistory([]));
+  }, [refreshHistory, projectRoot]);
+
+  async function handleApply() {
+    if (!result || result.diff.length === 0) return;
+    setApplyError(null);
+
+    // Shadow history lives in the user's own .git (CLAUDE.md §10), so a
+    // project without one needs a repo first. Creating it mutates their
+    // folder, so it is offered explicitly rather than done quietly.
+    const status = await getGitStatus();
+    if (!status.isRepository) {
+      setNeedsRepo(true);
+      return;
+    }
+
+    setApplying(true);
+    try {
+      const record: AgentChangeRecord = {
+        id: `${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        taskType: result.plan.taskType,
+        summary: result.plan.summary,
+        diffs: result.diff,
+      };
+      const outcome = await applyAgentChange(changeStore, record);
+      if (outcome.ok) {
+        setApplied(true);
+        await reloadOpenFiles();
+        await refreshHistory();
+      } else {
+        setApplyError(outcome.conflicts.map((c) => c.conflict.message).join(" "));
+      }
+    } catch (error) {
+      setApplyError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  async function handleUndo(entry: HistoryEntry) {
+    setUndoingId(entry.record.id);
+    setUndoConflicts((prev) => {
+      const next = { ...prev };
+      delete next[entry.record.id];
+      return next;
+    });
+    try {
+      const outcome = await revertAgentChange(changeStore, entry.record);
+      if (outcome.ok) {
+        await reloadOpenFiles();
+        await refreshHistory();
+      } else {
+        setUndoConflicts((prev) => ({
+          ...prev,
+          [entry.record.id]: outcome.conflicts.map((c) => c.conflict.message).join(" "),
+        }));
+      }
+    } catch (error) {
+      setUndoConflicts((prev) => ({
+        ...prev,
+        [entry.record.id]: error instanceof Error ? error.message : String(error),
+      }));
+    } finally {
+      setUndoingId(undefined);
+    }
+  }
+
+  /** Editors show stale content after a write until their buffers refresh. */
+  async function reloadOpenFiles() {
+    const refreshed: Record<string, string> = {};
+    for (const path of openPaths) {
+      refreshed[path] = await fs.readFile(path);
+    }
+    setFileContents((prev) => ({ ...prev, ...refreshed }));
+  }
+
+  async function handleInitRepo() {
+    await initGitRepository();
+    setNeedsRepo(false);
+    await refreshHistory();
+    await handleApply();
+  }
 
   // Desktop is where local models are actually expected to run; still
   // never assumed silently — the status bar always names whichever
@@ -253,6 +371,10 @@ function Workspace({
 
   async function handleRunTask() {
     setResult(null);
+    // A new proposal is not the previous one — without this reset the
+    // fresh diff would render as though it had already been applied.
+    setApplied(false);
+    setApplyError(null);
     try {
       const taskResult = await runAgentTask({
         provider,
@@ -339,7 +461,29 @@ function Workspace({
           )}
         </div>
 
-        <div className="h-full w-96 shrink-0 overflow-auto border-l border-border-subtle p-3">
+        <div className="flex h-full w-96 shrink-0 flex-col gap-3 overflow-auto border-l border-border-subtle p-3">
+          {needsRepo && (
+            <div className="rounded-md border border-status-warning/40 bg-status-warning/10 p-3">
+              <p className="text-sm font-medium text-text-primary">
+                This folder isn&apos;t a git repository yet
+              </p>
+              <p className="mt-1 text-xs text-text-secondary">
+                Paleonyx keeps a record of every change it makes so you can undo
+                it. That record lives in a git repository, on a separate branch
+                that never touches your own commits or working tree. Creating
+                one here adds a <code className="font-mono">.git</code> folder.
+              </p>
+              <div className="mt-2 flex gap-2">
+                <Button variant="primary" size="sm" onClick={handleInitRepo}>
+                  Create repository and apply
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setNeedsRepo(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
           <AgentPanel
             skillLevel={skillLevel}
             onSkillLevelChange={setSkillLevel}
@@ -353,7 +497,20 @@ function Workspace({
             onSubmit={handleRunTask}
             statusMessage={statusMessage}
             result={result}
+            onApply={handleApply}
+            applying={applying}
+            applied={applied}
+            applyError={applyError}
           />
+
+          <Panel title="History">
+            <Timeline
+              entries={history}
+              onUndo={handleUndo}
+              busyId={undoingId}
+              conflictById={undoConflicts}
+            />
+          </Panel>
         </div>
           </>
         )}
