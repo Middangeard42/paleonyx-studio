@@ -58,49 +58,78 @@ what's excluded is building a full teaching-curriculum product around them.
 
 ## 3. Core User Journeys
 
-1. **Open a project.** User points Paleonyx at an existing multi-language
+1. **Complete first-run onboarding.** On first launch (app-level, once —
+   not per-project, since skill level is a per-user preference per
+   CLAUDE.md §5), the user is walked through: a one-screen local-first
+   welcome; choosing a skill level (New to coding / Experienced /
+   Professional); and model setup — a silent, local-only hardware scan
+   surfaces which local models will run well on this machine, the full
+   model catalog stays browsable regardless (never trimmed to a
+   shortlist), and a clearly separate "bring your own API key" section
+   covers cloud options. Every step is skippable and everything chosen
+   here is changeable later in Settings — onboarding and Settings share
+   the same underlying screens rather than being two things to maintain.
+
+2. **Open a project.** User points Paleonyx at an existing multi-language
    repo. The app indexes it (file-aware + AST-aware), surfaces indexing
    progress honestly, and is immediately useful for navigation/search even
    before indexing completes.
 
-2. **Ask for a bug fix (suggest-only, default mode).** User describes a bug
+3. **Ask for a bug fix (suggest-only, default mode).** User describes a bug
    (freeform or via a guided "Bug Fix" task form). Agent investigates
    (reads files, may run tests), produces a task plan, then a diff. Nothing
    is written until the user reviews and approves.
 
-3. **Review and apply a diff.** User inspects the proposed diff per file,
+4. **Review and apply a diff.** User inspects the proposed diff per file,
    approves some hunks and rejects others if needed, applies. The change
    lands as an inspectable, timestamped entry in the timeline.
 
-4. **Undo an AI change.** User (immediately or later) reverts a specific
+5. **Undo an AI change.** User (immediately or later) reverts a specific
    agent change from the timeline without losing unrelated work done since,
    including their own manual edits.
 
-5. **Use a guided task form.** Instead of freeform prompting, user picks
+6. **Use a guided task form.** Instead of freeform prompting, user picks
    Refactor / Explain / Write Tests / Document / Bug Fix, fills structured
    fields (target file/selection, constraints), gets a more predictable,
    narrower agent run.
 
-6. **Inspect and edit agent context.** Before or during a task, user opens
+7. **Inspect and edit agent context.** Before or during a task, user opens
    the context panel to see exactly what files/docs/rules the agent can
    see, and adds or removes items explicitly.
 
-7. **Change permission mode.** User raises a specific project from
+8. **Change permission mode.** User raises a specific project from
    Suggest-only to Auto-apply (or narrows it back), sees a clear
    confirmation of what that changes, and sees the mode reflected
    persistently in the status bar for the rest of the session.
 
-8. **Switch or add a local model.** User installs/points to a different
-   local runtime (Ollama, LM Studio, llama.cpp, GPT4All) or the default
-   recommended model (Ornith-1), and the app picks it up through the same
-   unified interface without workflow changes elsewhere in the app.
+9. **Browse, install, or switch a local model.** From Settings (the same
+   screen onboarding used), the user browses the full local model catalog
+   — never limited to a curated handful — with each entry annotated
+   against their actual hardware ("fits comfortably" / "will be slow" /
+   "likely too large"). "Likely too large" entries start collapsed behind
+   a "Show N too-large models" toggle (off by default) so the default
+   view stays realistic without hiding anything permanently. Installing a
+   model and switching to it flows through the same unified runtime
+   interface without workflow changes elsewhere in the app.
 
-9. **Continue a task from mobile.** User starts a task on desktop, steps
-   away, and from a phone reviews task status and approves/rejects a
-   pending diff via a remote-controlled session against the running
-   desktop instance.
+10. **Bring your own API key for a cloud model.** From the same Models
+    settings screen, the user adds an API key for a supported provider —
+    v1 ships this through aggregator adapters (OpenRouter, Groq) rather
+    than one bespoke adapter per lab, which gets a wide model selection
+    (including free-tier options) without multiplying maintenance surface.
+    Each provider entry links to that provider's own key-creation page
+    with a short "how to get one" note. The key never leaves the machine
+    except in direct calls to that provider, is never stored in plaintext
+    (CLAUDE.md §4), and adding it is the explicit, visible opt-in that
+    CLAUDE.md's local-first default requires — nothing is called
+    remotely until this step happens.
 
-10. **Get an explanation pitched at the right level.** A newcomer asks
+11. **Continue a task from mobile.** User starts a task on desktop, steps
+    away, and from a phone reviews task status and approves/rejects a
+    pending diff via a remote-controlled session against the running
+    desktop instance.
+
+12. **Get an explanation pitched at the right level.** A newcomer asks
     "why does this fix work" and gets a grounded, jargon-defined walkthrough
     tied to their actual diff, with the option to go deeper. A professional
     gets a one-line rationale by default and can ask for more only if they
@@ -108,7 +137,7 @@ what's excluded is building a full teaching-curriculum product around them.
     §6.1), and switching the setting takes effect immediately, not on next
     session.
 
-11. **Hit a budget or ambiguity wall.** Agent pauses mid-task (budget
+13. **Hit a budget or ambiguity wall.** Agent pauses mid-task (budget
     exhausted, low confidence, repeated tool failure), clearly surfaces
     why, and the user resolves it (raise budget, clarify, redirect)
     without having lost the work done so far.
@@ -149,9 +178,27 @@ what's excluded is building a full teaching-curriculum product around them.
 - Local model runtime switching via unified, OpenAI-compatible interface;
   Ornith-1 as the recommended default where compatible with the user's
   local runtime.
+- **First-run onboarding** covering skill-level selection and model setup
+  (§3 journey 1), backed by the same Settings screens it hands off to —
+  not a separate one-time-only UI to maintain.
+- **Hardware-aware model catalog**: a System Profile capability (RAM, CPU
+  cores, GPU/VRAM where detectable, OS — desktop-only, since a browser has
+  no hardware access) annotates the full local model catalog against the
+  user's actual machine. The catalog itself is sourced hybrid: a bundled,
+  release-versioned list as the offline-safe baseline, with a background
+  live refresh attempted when reachable and clearly labeled as such when
+  it's in effect. Never trimmed to a curated handful — annotation guides
+  the user, it doesn't gate what's visible.
+- **Bring-your-own-key (BYOK) cloud providers**: v1 ships aggregator
+  adapters (OpenRouter, Groq) rather than one bespoke adapter per lab,
+  covering a wide model selection — including free-tier options — without
+  a maintenance burden that scales per-provider. Each entry links to that
+  provider's key-creation page with a short setup note. Adding a key is
+  the explicit, visible action that satisfies CLAUDE.md §4's local-first
+  default; keys are never stored in plaintext (CLAUDE.md §4).
 - MCP tool integration for extending agent capability.
 - Simple skill system: reusable task templates/workflows.
-- **Skill-level adaptation**: a user-set level (new to coding / comfortable
+- **Skill-level adaptation**: a user-set level (new to coding / experienced
   / professional) that shapes explanation depth and tone across agent
   responses, task plans, and diffs (never capability — see DESIGN.md §6.1
   and CLAUDE.md §5). Includes optional, dismissible Lesson Callouts tied to
@@ -167,10 +214,16 @@ what's excluded is building a full teaching-curriculum product around them.
 
 - **No default cloud execution or storage of code/prompts.** Any remote
   capability is opt-in and clearly indicated (per DESIGN.md's
-  local-vs-remote legibility principle).
+  local-vs-remote legibility principle). BYOK (§4) is the sanctioned
+  exception, and only for the specific provider a key was explicitly
+  added for — adding one key never implicitly enables others.
 - **No proprietary-model lock-in.** The runtime abstraction is a product
   requirement, not just an implementation detail — v1 must demonstrably
   work with at least one fully local model path.
+- **Not a general-purpose credential/secrets manager.** BYOK (§4) stores
+  exactly the provider API keys the user adds for model access, through
+  the one secure-storage mechanism CLAUDE.md §4 defines — it is not a
+  vault for unrelated secrets, and shouldn't grow into one.
 - **No full native mobile IDE in v1.** Mobile is remote-control only;
   native iOS/Android editing clients are a later-phase goal, not v1.
 - **No multiplayer/live collaboration in v1** (shared cursors, concurrent
@@ -206,7 +259,10 @@ measure success):
   silent failure points.
 - **Zero unintended network egress** in the default local configuration,
   verifiable via a network audit — this is a hard correctness bar, not an
-  aspiration.
+  aspiration. "Unintended" has exactly two carve-outs, both visibly
+  labeled when active: the model catalog's background live-refresh (§4),
+  and calls to a BYOK provider the user explicitly added a key for (§4).
+  Nothing else reaches the network unasked.
 - **Crash-free / data-loss-free sessions**: an agent failure (bad tool
   call, model error, crash) never corrupts the user's working tree or
   loses unrelated uncommitted work.
@@ -239,10 +295,15 @@ interface (§9), with room to add coding-specialized models available
 through Ollama (e.g. Qwen2.5-Coder, DeepSeek-Coder, StarCoder2 — exact list
 confirmed at implementation time against what's current and well-supported,
 not locked here) as additional recommended-model options rather than a
-single default; full permission-mode and budget system; skill-level
+single default; first-run onboarding (§3 journey 1) covering skill-level
+selection and model setup; the System Profile capability and
+hardware-annotated model catalog (§4) on desktop; BYOK via OpenRouter and
+Groq adapters (§4); full permission-mode and budget system; skill-level
 adaptation (§4) live for at least the core journeys; web companion
-functional against the same local backend; mobile remote-control for
-review/approve only.
+functional against the same local backend (hardware detection and BYOK
+key entry are desktop-only — the web companion shows the catalog
+unannotated and routes key management back to desktop for now); mobile
+remote-control for review/approve only.
 
 **Later (v2+, not committed scope)**
 Native mobile editing clients; live multiplayer collaboration; plugin
@@ -254,9 +315,15 @@ user-opted-in remote providers.
 
 ## 8. Risks & Assumptions
 
-- **Ornith-1 compatibility is assumed, not yet verified** against the
-  chosen local runtimes (Ollama/llama.cpp/etc.); needs an early spike
-  before it's load-bearing in v0.
+- ~~Ornith-1 compatibility is assumed, not yet verified~~ — **resolved.**
+  Ornith-1.0 is a family of MIT-licensed models built for agentic coding,
+  with native tool calling and a 262,144-token context. The 9B (dense) and
+  35B (mixture-of-experts) ship GGUF builds and run under Ollama directly
+  from their Hugging Face repos; both are in the bundled catalog. The 397B
+  is FP8-only with no GGUF, so no Ollama-backed runtime can load it and it
+  is not listed. One open detail: the 35B's *active* parameter count isn't
+  published, so its speed is currently judged by the full 35B — a
+  pessimistic rating that should be corrected once the figure is known.
 - **AST-aware indexing depth varies by language ecosystem maturity** (e.g.
   tree-sitter grammar quality differs across the listed languages) —
   actual tier boundaries in §4 need validation against real parser support
@@ -271,11 +338,26 @@ user-opted-in remote providers.
 - **Mobile remote-control's security model** (auth between phone and
   desktop session, especially over untrusted networks) needs explicit
   design before that journey is implemented, not assumed safe by default.
-- **Skill-level detection/defaults**: no default skill level is chosen yet
-  for a brand-new install (e.g. asked at onboarding vs. a neutral
-  "Comfortable" default) — needs a decision before the onboarding journey
-  (§3, journey 1) is implemented, so it isn't guessed silently at first
-  launch.
+- **System Profile detection accuracy** (GPU/VRAM detection especially) is
+  inherently best-effort across the range of hardware Paleonyx might run
+  on — the hardware-fit annotations in the model catalog (§4) should read
+  as guidance, never as a hard guarantee a model will run well, and the UI
+  needs to make that framing explicit rather than implying certainty.
+  Currently implemented on Windows only (via DXGI); macOS and Linux report
+  no GPU and fall back to a CPU-only assessment, which under-promises
+  rather than over-promises but does need building out before those
+  platforms are properly supported.
+- **The catalog's live-refresh half is unbuilt** (CLAUDE.md §4.1): no
+  public API exists for Ollama's model library, so a genuinely current
+  catalog requires hosting an index ourselves. Until then the bundled list
+  goes stale between releases — acceptable for now because it is labeled
+  as bundled with its date, but it is a standing cost, not a solved
+  problem.
+- **Aggregator dependency for BYOK**: routing v1's cloud model access
+  through OpenRouter/Groq (§4) means their uptime and pricing/ToS become
+  part of Paleonyx's dependency surface for that feature, not just the
+  underlying labs' — worth revisiting if either becomes unreliable or if
+  demand for direct single-provider adapters turns out to be real.
 
 ---
 
@@ -295,3 +377,19 @@ user-opted-in remote providers.
    against real tree-sitter/parser maturity per language, before v1 lock —
    ranking alone shouldn't override a language that's popular but poorly
    supported by available parsers, or vice versa.
+4. ~~Skill-level naming and default~~ — **Decided: "New to coding /
+   Experienced / Professional"** (renamed from "Comfortable" to
+   "Experienced"), chosen explicitly during first-run onboarding (§3
+   journey 1) — never silently defaulted. The placeholder default in
+   shared-types exists only as the pre-onboarding-completion fallback, not
+   as a product decision to skip asking.
+5. ~~Model catalog sourcing~~ — **Decided: hybrid.** A bundled,
+   release-versioned catalog is the offline-safe baseline; a background
+   live refresh is attempted when reachable and clearly labeled as such
+   when it's the source in effect (DESIGN.md's local-vs-remote legibility
+   principle applies here too).
+6. ~~v1 BYOK provider scope~~ — **Decided: aggregator adapters first
+   (OpenRouter, Groq)**, not one bespoke adapter per lab. This trades a
+   small dependency on the aggregators' own uptime/ToS (§8) for wide
+   model coverage — including free-tier options — without per-provider
+   maintenance scaling linearly with the number of labs supported.

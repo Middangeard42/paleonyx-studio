@@ -1,0 +1,117 @@
+/**
+ * Design tokens per DESIGN.md §2. Dark is the default theme (no
+ * data-theme attribute needed); [data-theme="light"] overrides. Every
+ * future theme is added the same way — a new attribute selector
+ * supplying new values for the same variable names, never new component
+ * logic (DESIGN.md §2.1).
+ *
+ * Color values below are a first v0 pass, not a verified-contrast final
+ * set — DESIGN.md §7 requires contrast to be verified, not assumed, and
+ * that audit pass hasn't happened yet. Treat these as placeholders wired
+ * correctly through the system, not as signed-off brand color.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Surface elevation */
+  --surface-0: #131211;
+  --surface-1: #1b1a18;
+  --surface-2: #232220;
+  --surface-3: #2c2a28;
+
+  /* Borders */
+  --border-subtle: #2f2d2b;
+  --border-default: #3d3a37;
+  --border-strong: #565149;
+
+  /* Text */
+  --text-primary: #f2ede6;
+  --text-secondary: #b9b2a8;
+  --text-tertiary: #837c72;
+  --text-disabled: #5c574f;
+
+  /* Accent — tentative warm amber/copper, see DESIGN.md §9 open item */
+  --accent: #c9803f;
+  --accent-muted: #3a2a1c;
+  --accent-foreground: #1b1200;
+
+  /* Status — reserved exclusively for real status communication */
+  --status-info: #5b9bd5;
+  --status-success: #6fae6e;
+  --status-warning: #d5a63a;
+  --status-danger: #d5615a;
+
+  /* Diff — distinct identity from generic status colors */
+  --diff-add: #6fae6e;
+  --diff-add-bg: #1c2a1c;
+  --diff-remove: #d5615a;
+  --diff-remove-bg: #2a1c1c;
+
+  /* Spacing (8px grid, DESIGN.md §2.3) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Motion (DESIGN.md §2.6) */
+  --duration-micro: 100ms;
+  --duration-panel: 180ms;
+  --duration-layout: 250ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+
+  /* Typography */
+  --font-ui: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-0: #faf8f5;
+  --surface-1: #f2efe9;
+  --surface-2: #eae6de;
+  --surface-3: #ddd8cd;
+
+  --border-subtle: #e2ddd3;
+  --border-default: #cfc8ba;
+  --border-strong: #a89d89;
+
+  --text-primary: #201d18;
+  --text-secondary: #4c463d;
+  --text-tertiary: #756c5e;
+  --text-disabled: #a79d8c;
+
+  --accent: #a8632b;
+  --accent-muted: #f0dcc4;
+  --accent-foreground: #ffffff;
+
+  --status-info: #2f6fad;
+  --status-success: #3f7a3e;
+  --status-warning: #96721f;
+  --status-danger: #ad3f37;
+
+  --diff-add: #3f7a3e;
+  --diff-add-bg: #e5efe0;
+  --diff-remove: #ad3f37;
+  --diff-remove-bg: #f5e4e0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-micro: 0ms;
+    --duration-panel: 0ms;
+    --duration-layout: 0ms;
+  }
+}
+
+body {
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+}

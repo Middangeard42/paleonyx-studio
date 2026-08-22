@@ -299,12 +299,12 @@ This is a headline differentiator for the product (per PRD.md §2/§4), not a
 cosmetic setting, so it gets its own pattern rather than being folded into
 general preferences.
 
-- **Skill Level control**: a persistent, user-set value (e.g. New to
-  coding / Comfortable / Professional, or a simple slider — exact taxonomy
-  TBD in a follow-up pass) reachable from Settings and the status bar area.
-  Never silently inferred and silently acted on without the user seeing
-  the current setting; the app may *suggest* a level based on behavior,
-  but changing it is always an explicit user action.
+- **Skill Level control**: a persistent, user-set value — New to coding /
+  Experienced / Professional (PRD.md §9 decision 4) — first chosen during
+  onboarding (§6.3) and reachable afterward from Settings and the status
+  bar area. Never silently inferred and silently acted on without the
+  user seeing the current setting; the app may *suggest* a level based on
+  behavior, but changing it is always an explicit user action.
 - **Explanation Depth, not a different product**: the skill-level setting
   changes how much the agent explains (terse + assumes vocabulary at
   Professional; walks through reasoning and defines terms at New to
@@ -355,6 +355,56 @@ general preferences.
   change, each entry reversible independently (backed by the git-based
   undo system — see CLAUDE.md §5).
 
+### 6.3 Onboarding & Model Setup
+
+First-run only (app-level, not per-project — PRD.md §3 journey 1), and
+built from the same screens Settings uses afterward rather than a
+disposable one-time UI.
+
+- **Welcome**: one screen, local-first framing, no decisions required yet.
+- **Skill Level**: New to coding / Experienced / Professional as
+  selectable cards (§6.1's descriptors as body text on each card, not a
+  bare radio group) — this is a real choice being made, sized
+  accordingly, with a visible "change this anytime in Settings" note so
+  it doesn't feel like a one-shot commitment.
+- **Model setup** (the Models screen, reused verbatim from Settings):
+  - A brief, local-only "here's what we found" hardware summary (RAM, CPU
+    cores, GPU/VRAM if detected) — legible per DESIGN.md §1.8's
+    local-first-is-visible principle, framed as guidance ("likely to run
+    well") rather than a guarantee (PRD.md §8 risk: detection is
+    best-effort).
+  - The **full** local model catalog stays browsable underneath that
+    summary — hardware fit is an annotation/sort signal on every card. If
+    the catalog's current view is the bundled offline baseline vs. a
+    live-refreshed list (CLAUDE.md §4.1), that's a small, honest label,
+    not hidden metadata.
+  - One specific exception to "never filtered": entries annotated **"Too
+    large for this machine"** are collapsed out of view by default —
+    showing a wall of models someone's hardware can't realistically run
+    isn't useful density, it's noise (DESIGN.md §1.5). This is a visible,
+    reversible UI default, not a data-level exclusion: a plain toggle
+    reading **"Show N too-large models"** sits at the bottom of the
+    catalog, off by default, one click to reveal — never a silent count
+    with no way to see what's behind it (mirrors the "Show more" pattern
+    in §5.4). The toggle's state is a remembered local preference, not
+    something reset every time the screen opens. "Fits comfortably" and
+    "will be slow" entries are always shown; only the "too large" bucket
+    gets this default collapse.
+  - A **visually secondary, clearly separated** "Bring your own API key"
+    section below the local catalog — same visual system, lower emphasis
+    (no accent-colored primary buttons, no top billing). This is a
+    deliberate hierarchy choice, not an oversight: cloud/BYOK options
+    must never visually compete with or outrank local options, or the
+    onboarding flow undercuts the product's own local-first positioning.
+    Each provider entry: name, a one-line note on free-tier availability
+    where one exists, and a link out to that provider's key-creation
+    page — entering the key is the only required interaction here.
+  - Every choice on this screen is skippable; skipping leaves the
+    corresponding budget/permission/model state at its safe default
+    rather than blocking progress.
+- **Ready**: a one-screen summary of what was chosen, then straight into
+  the normal shell — no separate "tour" step bolted on.
+
 ---
 
 ## 7. Accessibility Rules
@@ -402,6 +452,13 @@ Reject a design if it does any of the following:
 - Condescending tone at low skill levels (baby-talk, excessive
   exclamation, over-praising trivial actions) or curt/impatient tone at
   high skill levels — both are failures of the same principle (§1.4)
+- BYOK/cloud model options given equal or greater visual weight than
+  local options anywhere in the product — §6.3's secondary-placement rule
+  is the specific fix; the general failure to watch for is any screen
+  where "the AI" implicitly means "the cloud" by default styling
+- Hardware-fit annotations in the model catalog phrased as guarantees
+  ("Will run perfectly") rather than guidance — detection is best-effort
+  (PRD.md §8) and the copy must not overclaim certainty it doesn't have
 
 ---
 
@@ -412,6 +469,17 @@ Reject a design if it does any of the following:
 3. ~~Theming approach~~ — **Decided: dark is the default theme**; light and
    further themes are available in Settings, built on the same token set
    from the start (§2.1).
-4. **Open**: exact accent hue. Tentatively proposing a warm amber/copper
+4. ~~Skill-level taxonomy~~ — **Decided: New to coding / Experienced /
+   Professional** (§6.1), fixed three-tier set rather than a slider —
+   discrete cards read better for a real onboarding choice than a
+   continuous control would.
+5. ~~Onboarding structure~~ — **Decided: Welcome → Skill Level → Model
+   setup → Ready** (§6.3), sharing the Models screen with Settings rather
+   than maintaining a separate onboarding-only version of it.
+6. ~~Too-large model visibility~~ — **Decided: hidden by default, behind
+   a visible "Show N too-large models" toggle** (§6.3) — a reversible UI
+   default, not a data-level exclusion; "fits comfortably" and "will be
+   slow" entries always show.
+7. **Open**: exact accent hue. Tentatively proposing a warm amber/copper
    (§2.1) in place of the generic AI blue/purple; final value pending a
    dedicated token-exploration pass before implementation.

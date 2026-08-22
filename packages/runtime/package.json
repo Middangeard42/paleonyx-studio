@@ -1,0 +1,23 @@
+{
+  "name": "@paleonyx/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@paleonyx/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@paleonyx/system-profile": "workspace:*",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}

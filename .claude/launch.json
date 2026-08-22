@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "pnpm@9.12.0", "--filter", "@paleonyx/web", "dev"],
+      "port": 5173
+    }
+  ]
+}

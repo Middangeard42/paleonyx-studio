@@ -58,9 +58,16 @@ paleonyx-studio/
 │   │       ├── ollama/
 │   │       ├── lmstudio/
 │   │       ├── llamacpp/
-│   │       └── gpt4all/
+│   │       ├── gpt4all/
+│   │       ├── openrouter/    # BYOK aggregator adapter (§4)
+│   │       └── groq/          # BYOK aggregator adapter (§4)
 │   ├── indexing/              # File watching, AST parsing (per language),
 │   │                          # embeddings, semantic search
+│   ├── system-profile/        # Desktop-only hardware detection (RAM, CPU
+│   │                          # cores, GPU/VRAM, OS) backing the model
+│   │                          # catalog's hardware-fit annotations (§4) —
+│   │                          # read-only, native-backed, no fallback
+│   │                          # fabrication on web (§9)
 │   ├── vcs/                   # Git-backed shadow history for agent
 │   │                          # changes: commit-per-change, diff/undo API
 │   ├── mcp-client/             # MCP tool integration layer
@@ -145,6 +152,68 @@ Rules for this structure:
   runtime layer is the single choke point responsible for this guarantee
   — it's the place a network-boundary audit checks first.
 
+### 4.1 Model Catalog & System Profile
+
+- The **model catalog** (what's browsable/installable, distinct from
+  `ModelInfo`/`ModelCapabilities` which describe a single *configured*
+  provider) is sourced hybrid per PRD.md §9 decision 5: a bundled,
+  release-versioned list is the offline-safe baseline; a background live
+  refresh is attempted when reachable. Whichever source produced what the
+  user is looking at must be visibly labeled — this is one of exactly two
+  sanctioned exceptions to the no-unintended-egress bar (PRD.md §6), and
+  the UI-legibility requirement is what keeps it sanctioned rather than
+  silent.
+- **Status: the live half is not built.** Ollama publishes no public API
+  for its model *library*, only for what is already installed locally, so
+  a real live refresh needs a Paleonyx-hosted index that doesn't exist
+  yet. What ships today is the bundled baseline merged with the local
+  Ollama install list — all on localhost, nothing leaving the machine, so
+  the labeling rule above isn't yet in play. `loadModelCatalog` never
+  returns `source: "live"`. Building that index is what turns this
+  decision from partially- to fully-implemented; until then the UI
+  correctly labels every view as bundled.
+- The catalog is never trimmed to a curated shortlist *in code* — the
+  full set the source (bundled or live) returns is always fetched and
+  held in state. The one UI-level exception is DESIGN.md §6.3's default
+  collapse of "too large" entries behind a visible, one-click "Show N
+  too-large models" toggle — that's a render-time default in `ui`/the
+  app, not a filter applied before data reaches the app, and the toggled
+  state must be a real count of real entries, never a vague "more
+  available" placeholder.
+- **System Profile** (`packages/system-profile`) is a read-only,
+  desktop-only capability: RAM, CPU core count, GPU/VRAM where
+  detectable, OS. It has exactly one consumer relationship worth naming —
+  the model catalog UI uses it to annotate entries ("fits comfortably" /
+  "will be slow" / "likely too large") and to drive the too-large
+  default-collapse above — and no write capability at all. `apps/web` has
+  no equivalent; it shows the catalog unannotated (and never collapses
+  anything, since it has no fit signal to collapse by) rather than
+  fabricating a profile, per DESIGN.md's real-states-only discipline (§5).
+
+### 4.2 Bring-Your-Own-Key (BYOK) Remote Providers
+
+- v1 ships exactly two BYOK adapters — OpenRouter and Groq (PRD.md §9
+  decision 6) — implementing the same `ChatModelProvider` interface as
+  every local adapter. Nothing about agent-core or ui needs to know a
+  given provider is remote versus local; that distinction is entirely a
+  `ModelCapabilities.isLocal` flag plus the always-visible status-bar
+  legibility DESIGN.md requires.
+- **API keys are never stored in plaintext**, in a config file or
+  anywhere else the app's own on-disk state touches. Desktop uses
+  OS-native secure storage (a Tauri keyring/credential-store plugin, not
+  a hand-rolled encryption scheme). `apps/web` has no durable local
+  storage story for this yet — key entry on web either proxies to a
+  running desktop session or is out of scope until that's designed;
+  never falls back to `localStorage` for a credential.
+- Adding a key is the explicit, visible opt-in CLAUDE.md §4's local-first
+  default requires for that one provider — it never implicitly enables
+  any other remote provider, and removing a key is symmetric (immediate,
+  no confirmation dance beyond a normal destructive-ish action).
+- BYOK provider entries in Settings link to that provider's own
+  key-creation page and a short setup note (content lives in `ui`/app
+  copy, not hardcoded into `runtime` — the adapter shouldn't need to
+  change if the instructions get clearer).
+
 ---
 
 ## 5. Skill-Level Adaptation
@@ -153,10 +222,14 @@ Per PRD.md §2/§4, adapting to the user's coding skill level is a headline
 product requirement, not a UI nicety layered on top — so it is modeled as a
 first-class concept in `agent-core`, alongside permission mode and budgets.
 
-- `SkillLevel` is a typed value in `shared-types` (e.g. `new-to-coding |
-  comfortable | professional`), set per user (not per project — a
-  developer's skill doesn't reset when they switch repos) and stored
-  alongside other local user preferences.
+- `SkillLevel` is a typed value in `shared-types` (`new-to-coding |
+  experienced | professional` — renamed from `comfortable` per PRD.md §9
+  decision 4), set per user (not per project — a developer's skill
+  doesn't reset when they switch repos) and stored alongside other local
+  user preferences. Chosen explicitly during first-run onboarding
+  (PRD.md §3 journey 1); the default value in code exists only as the
+  pre-onboarding fallback, never as an unasked default a real session
+  runs under.
 - `agent-core` reads the current `SkillLevel` when constructing prompts and
   when formatting plans/diffs/explanations — it changes verbosity and
   teaching depth, never capability. The same tools, the same task types,
@@ -263,6 +336,13 @@ product's core trust promise breaks.
 - Don't add telemetry, analytics, or network calls anywhere without
   threading them through the same local-first choke point described in
   §4, and never without it being an explicit, visible opt-in.
+- Don't store a BYOK API key anywhere but OS-native secure storage — not
+  `localStorage`, not a plaintext file, not a Zustand/Redux persisted
+  store, not a "just for dev" shortcut left behind (§4.2).
+- Don't let the model catalog's live-refresh path (§4.1) become a second,
+  undocumented way to reach the network — it goes through the same
+  runtime choke point and the same visible-labeling requirement as every
+  other remote call.
 
 ---
 
@@ -287,3 +367,16 @@ product's core trust promise breaks.
    proposal is to initialize one transparently on first agent-write
    attempt, with a clear one-time notice to the user before doing so
    (this is a repo-mutating action and should not happen silently).
+4. ~~Model catalog sourcing~~ — **Decided: hybrid** (§4.1) — bundled
+   offline baseline, labeled live refresh when reachable.
+5. ~~v1 BYOK provider scope~~ — **Decided: OpenRouter + Groq adapters**
+   (§4.2), not direct per-lab adapters, for wide coverage without
+   maintenance scaling per provider — revisit if aggregator reliability or
+   demand for a direct adapter (e.g. a specific lab's exclusive feature)
+   makes that trade-off stop paying off.
+6. ~~Skill-level naming~~ — **Decided: "New to coding / Experienced /
+   Professional"** — the `comfortable` value across `shared-types` and
+   `agent-core` is renamed to `experienced` (§5).
+7. ~~Too-large model default visibility~~ — **Decided: hidden by default,
+   UI-level toggle to reveal** (§4.1, DESIGN.md §6.3) — not a catalog-data
+   exclusion.

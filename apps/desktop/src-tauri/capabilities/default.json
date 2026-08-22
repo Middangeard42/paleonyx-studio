@@ -1,0 +1,9 @@
+{
+  "identifier": "default",
+  "description": "Capabilities granted to the main window — scoped to exactly the three project-read commands v0 needs, nothing broader.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-title"
+  ]
+}
