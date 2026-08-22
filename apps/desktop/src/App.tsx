@@ -24,7 +24,13 @@ import {
 import { CodeEditor } from "@paleonyx/editor";
 import { listProjectFiles } from "@paleonyx/indexing";
 import { DEFAULT_BUDGET_LIMITS, runAgentTask } from "@paleonyx/agent-core";
-import { MockAdapter, OllamaAdapter, loadModelCatalog, pingOllama } from "@paleonyx/runtime";
+import {
+  MockAdapter,
+  OllamaAdapter,
+  demoRespond,
+  loadModelCatalog,
+  pingOllama,
+} from "@paleonyx/runtime";
 import type { ChatModelProvider } from "@paleonyx/runtime";
 import {
   DEFAULT_PERMISSION_MODE,
@@ -211,7 +217,11 @@ function Workspace({
   const [budgetUsage, setBudgetUsage] = useState<BudgetUsage>(ZERO_BUDGET_USAGE);
 
   const [provider, setProvider] = useState<ChatModelProvider>(
-    () => new MockAdapter({ respond: () => "```json\n{}\n```", modelLabel: "Mock (no local model reachable)" })
+    () =>
+      new MockAdapter({
+        respond: demoRespond,
+        modelLabel: "Mock (no local model reachable)",
+      })
   );
 
   const [activePanel, setActivePanel] = useState("files");

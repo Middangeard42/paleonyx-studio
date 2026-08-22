@@ -14,24 +14,32 @@ export interface CodeEditorProps {
 }
 
 /**
- * A single-model editor instance. Callers remount per open file (e.g.
- * `<CodeEditor key={file.path} .../>`) rather than this component
- * managing multi-model swap lifecycle itself — real multi-model
- * management (shared model per tab, live-diagnostics across tabs) is a
- * v1 concern once the editor needs to support truly persistent
- * background state; a v0 single-language skeleton doesn't need it yet.
+ * Monaco wrapper.
+ *
+ * The instance is created once and then kept in sync through separate
+ * effects, rather than being recreated whenever a prop changes —
+ * recreating would throw away scroll position, selection, and the undo
+ * stack on every keystroke upstream.
+ *
+ * Syncing `value` is not optional. Content arrives after mount in two
+ * ordinary cases: the file is still being read when the tab opens, and
+ * the agent has just rewritten the file on disk. An editor that only
+ * reads `value` at mount shows an empty buffer in the first case and
+ * stale content in the second.
  */
 export function CodeEditor({ language, value, onChange, readOnly = false, theme = "dark" }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor>();
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
     defineEditorThemes();
 
-    const editor = monaco.editor.create(containerRef.current, {
-      value,
+    const editor = monaco.editor.create(container, {
+      value: "",
       language,
       theme: theme === "dark" ? PALEONYX_DARK_THEME : PALEONYX_LIGHT_THEME,
       readOnly,
@@ -43,18 +51,62 @@ export function CodeEditor({ language, value, onChange, readOnly = false, theme 
       minimap: { enabled: true },
       scrollBeyondLastLine: false,
     });
+    editorRef.current = editor;
 
     const disposable = editor.onDidChangeModelContent(() => {
       onChangeRef.current?.(editor.getValue());
     });
 
+    // Monaco measures its viewport when it is created. Inside a tab panel
+    // that container is still zero-height at that moment, so the editor
+    // decides it has no visible rows and paints nothing — even after the
+    // model is populated. `automaticLayout` does not recover from this on
+    // its own, so re-measure once the browser has actually laid the
+    // container out.
+    const frame = requestAnimationFrame(() => editorRef.current?.layout());
+
     return () => {
+      cancelAnimationFrame(frame);
       disposable.dispose();
       editor.dispose();
+      editorRef.current = undefined;
     };
-    // Intentionally created once per mount; see the component doc comment.
+    // Created once for the lifetime of the component. Everything that can
+    // change afterwards is handled by the effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    // Guard against echoing our own edits back: without this, typing in
+    // the editor would fire onChange, update state upstream, and come
+    // back here as a "new" value that resets the cursor mid-keystroke.
+    if (editor.getValue() === value) return;
+
+    const selection = editor.getSelection();
+    const scrollTop = editor.getScrollTop();
+    editor.setValue(value);
+    if (selection) editor.setSelection(selection);
+    editor.setScrollTop(scrollTop);
+    // Content commonly arrives while the editor still believes it has a
+    // zero-height viewport (see the mount effect). Re-measuring here is
+    // what makes the first real content actually appear.
+    editor.layout();
+  }, [value]);
+
+  useEffect(() => {
+    const model = editorRef.current?.getModel();
+    if (model && language) monaco.editor.setModelLanguage(model, language);
+  }, [language]);
+
+  useEffect(() => {
+    monaco.editor.setTheme(theme === "dark" ? PALEONYX_DARK_THEME : PALEONYX_LIGHT_THEME);
+  }, [theme]);
+
+  useEffect(() => {
+    editorRef.current?.updateOptions({ readOnly });
+  }, [readOnly]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

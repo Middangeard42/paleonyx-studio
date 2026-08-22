@@ -17,7 +17,13 @@ import {
 import { CodeEditor } from "@paleonyx/editor";
 import { listProjectFiles } from "@paleonyx/indexing";
 import { DEFAULT_BUDGET_LIMITS, runAgentTask } from "@paleonyx/agent-core";
-import { MockAdapter, OllamaAdapter, loadModelCatalog, pingOllama } from "@paleonyx/runtime";
+import {
+  MockAdapter,
+  OllamaAdapter,
+  demoRespond,
+  loadModelCatalog,
+  pingOllama,
+} from "@paleonyx/runtime";
 import type { ChatModelProvider } from "@paleonyx/runtime";
 import {
   DEFAULT_PERMISSION_MODE,
@@ -32,7 +38,7 @@ import type {
   SkillLevel,
 } from "@paleonyx/shared-types";
 import { InMemoryFileSystem } from "./demo-project.js";
-import { mockRespond } from "./mock-responses.js";
+
 
 const ZERO_BUDGET_USAGE: BudgetUsage = { toolCalls: 0, tokens: 0 };
 
@@ -60,7 +66,7 @@ export function App() {
   const [budgetUsage, setBudgetUsage] = useState<BudgetUsage>(ZERO_BUDGET_USAGE);
 
   const [provider, setProvider] = useState<ChatModelProvider>(
-    () => new MockAdapter({ respond: mockRespond, modelLabel: "Mock (offline demo)" })
+    () => new MockAdapter({ respond: demoRespond, modelLabel: "Mock (offline demo)" })
   );
 
   const [activePanel, setActivePanel] = useState("files");

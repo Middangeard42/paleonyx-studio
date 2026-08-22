@@ -3,9 +3,13 @@ import type { ChatCompletionRequest } from "@paleonyx/shared-types";
 /**
  * Canned responses matching agent-core's RESPONSE_CONTRACT, keyed off
  * the task-type marker text that packages/agent-core/src/prompt.ts's
- * buildSystemPrompt always includes. Only used when a local Ollama
- * instance isn't reachable (see App.tsx) — this is a stand-in for a real
- * model, not something a user would ever see labeled as one.
+ * buildSystemPrompt always includes. Used when no local runtime is
+ * reachable — a stand-in for a model, never presented to a user as one
+ * (the status bar always reads "Mock").
+ *
+ * Lives here, beside MockAdapter, rather than in either app: both apps
+ * need it, and when only one of them had it the other silently shipped a
+ * placeholder that returned `{}` and could never produce a usable result.
  */
 const BUG_FIX_RESPONSE = `Here is my analysis.
 
@@ -51,7 +55,7 @@ const EXPLAIN_RESPONSE = `\`\`\`json
 }
 \`\`\``;
 
-export function mockRespond(request: ChatCompletionRequest): string {
+export function demoRespond(request: ChatCompletionRequest): string {
   const systemMessage = request.messages.find((message) => message.role === "system")?.content ?? "";
   return systemMessage.includes("Task type: Bug Fix") ? BUG_FIX_RESPONSE : EXPLAIN_RESPONSE;
 }

@@ -9,13 +9,16 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@paleonyx/runtime": "workspace:*",
     "@paleonyx/shared-types": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "@paleonyx/vcs": "workspace:*",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
   }
 }
