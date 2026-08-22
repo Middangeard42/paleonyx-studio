@@ -33,6 +33,18 @@ export class TauriChangeStore implements ChangeStore {
   }
 }
 
+/**
+ * Saves the user's own edits.
+ *
+ * Deliberately separate from `ChangeStore.writeFiles`: a person editing
+ * their own file is not an agent change and must not land in the agent
+ * timeline. Only writes the agent makes are recorded there, which is
+ * what keeps "undo this agent change" meaningful.
+ */
+export async function saveUserEdits(files: Map<string, string>): Promise<void> {
+  await invoke("write_project_files", { files: Object.fromEntries(files) });
+}
+
 export async function getGitStatus(): Promise<GitStatus> {
   return invoke<GitStatus>("git_status");
 }

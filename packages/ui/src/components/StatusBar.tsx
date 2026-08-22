@@ -8,6 +8,13 @@ export interface StatusBarProps {
   budgetUsage: BudgetUsage;
   budgetLimits: BudgetLimits;
   indexedFileCount: number;
+  /**
+   * Unsaved files. The tab dot is the conventional signal, but it means
+   * nothing to someone who has never used an editor with one — naming
+   * the shortcut here is the cheapest way to make saving discoverable
+   * without a tutorial (DESIGN.md §1.4).
+   */
+  unsavedCount?: number;
 }
 
 /**
@@ -21,6 +28,7 @@ export function StatusBar({
   budgetUsage,
   budgetLimits,
   indexedFileCount,
+  unsavedCount = 0,
 }: StatusBarProps) {
   const budgetExhausted =
     budgetUsage.toolCalls >= budgetLimits.maxToolCalls || budgetUsage.tokens >= budgetLimits.maxTokens;
@@ -36,6 +44,12 @@ export function StatusBar({
           <FolderTree size={12} className="text-text-tertiary" />
           {indexedFileCount} files indexed
         </span>
+        {unsavedCount > 0 && (
+          <span className="flex items-center gap-1 text-accent">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
+            {unsavedCount} unsaved · Ctrl+S to save
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <span className={budgetExhausted ? "text-status-danger" : undefined}>

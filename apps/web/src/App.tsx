@@ -237,7 +237,12 @@ export function App() {
                         key={path}
                         language={files.find((f) => f.path === path)?.language}
                         value={fileContents[path] ?? ""}
-                        readOnly
+                        // Edits live in the in-memory demo project only —
+                        // this harness has no filesystem to save to. The
+                        // desktop app is where saving is real.
+                        onChange={(next) =>
+                          setFileContents((prev) => ({ ...prev, [path]: next }))
+                        }
                       />
                     </TabPanel>
                   ))}

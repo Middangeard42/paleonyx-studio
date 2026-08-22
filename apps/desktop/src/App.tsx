@@ -53,6 +53,7 @@ import {
   TauriChangeStore,
   getGitStatus,
   initGitRepository,
+  saveUserEdits,
 } from "./tauri-change-store.js";
 
 const ZERO_BUDGET_USAGE: BudgetUsage = { toolCalls: 0, tokens: 0 };
@@ -225,6 +226,7 @@ function Workspace({
   );
 
   const [activePanel, setActivePanel] = useState("files");
+  const [dirtyPaths, setDirtyPaths] = useState<Set<string>>(new Set());
 
   const changeStore = useMemo(() => new TauriChangeStore(), []);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -257,6 +259,18 @@ function Workspace({
   async function handleApply() {
     if (!result || result.diff.length === 0) return;
     setApplyError(null);
+
+    // The agent patches what is on disk, not what is in the editor. If a
+    // target file has unsaved edits, applying would write over content
+    // the user can still see in front of them — and the diff was computed
+    // against a version that no longer reflects their intent either.
+    const unsaved = result.diff.map((d) => d.filePath).filter((p) => dirtyPaths.has(p));
+    if (unsaved.length > 0) {
+      setApplyError(
+        `Save your changes to ${unsaved.join(", ")} first — applying would overwrite them.`
+      );
+      return;
+    }
 
     // Shadow history lives in the user's own .git (CLAUDE.md §10), so a
     // project without one needs a repo first. Creating it mutates their
@@ -326,7 +340,48 @@ function Workspace({
       refreshed[path] = await fs.readFile(path);
     }
     setFileContents((prev) => ({ ...prev, ...refreshed }));
+    // Buffers now match disk again, so nothing is outstanding.
+    setDirtyPaths(new Set());
   }
+
+  function handleEditorChange(path: string, next: string) {
+    setFileContents((prev) => ({ ...prev, [path]: next }));
+    setDirtyPaths((prev) => {
+      if (prev.has(path)) return prev;
+      const next = new Set(prev);
+      next.add(path);
+      return next;
+    });
+  }
+
+  const saveFile = useCallback(
+    async (path: string) => {
+      const content = fileContents[path];
+      if (content === undefined) return;
+      await saveUserEdits(new Map([[path, content]]));
+      setDirtyPaths((prev) => {
+        if (!prev.has(path)) return prev;
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+    },
+    [fileContents]
+  );
+
+  // Ctrl/Cmd+S saves the active file. Explicit rather than autosaving,
+  // because an agent is also writing to these files: a save the user
+  // didn't ask for could race a change they haven't reviewed yet.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (selectedPath) void saveFile(selectedPath);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedPath, saveFile]);
 
   async function handleInitRepo() {
     await initGitRepository();
@@ -452,7 +507,11 @@ function Workspace({
             </div>
           ) : (
             <Tabs
-              items={openPaths.map((path) => ({ value: path, label: path.split("/").pop() ?? path }))}
+              items={openPaths.map((path) => ({
+                value: path,
+                label: path.split("/").pop() ?? path,
+                dirty: dirtyPaths.has(path),
+              }))}
               value={activeTab}
               onValueChange={setSelectedPath}
               onClose={closeTab}
@@ -463,7 +522,7 @@ function Workspace({
                     key={path}
                     language={files.find((f) => f.path === path)?.language}
                     value={fileContents[path] ?? ""}
-                    readOnly
+                    onChange={(next) => handleEditorChange(path, next)}
                   />
                 </TabPanel>
               ))}
@@ -532,6 +591,7 @@ function Workspace({
         budgetUsage={budgetUsage}
         budgetLimits={DEFAULT_BUDGET_LIMITS}
         indexedFileCount={files.length}
+        unsavedCount={dirtyPaths.size}
       />
     </div>
   );

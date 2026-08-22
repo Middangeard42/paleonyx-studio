@@ -32,6 +32,13 @@ export function CodeEditor({ language, value, onChange, readOnly = false, theme 
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor>();
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  /**
+   * Set while we write into the model ourselves. Monaco cannot tell a
+   * programmatic `setValue` from typing, so without this every sync —
+   * opening a file, or the agent rewriting one — would fire `onChange`
+   * and the app would mark a file the user never touched as unsaved.
+   */
+  const applyingExternalValue = useRef(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -54,6 +61,7 @@ export function CodeEditor({ language, value, onChange, readOnly = false, theme 
     editorRef.current = editor;
 
     const disposable = editor.onDidChangeModelContent(() => {
+      if (applyingExternalValue.current) return;
       onChangeRef.current?.(editor.getValue());
     });
 
@@ -86,7 +94,9 @@ export function CodeEditor({ language, value, onChange, readOnly = false, theme 
 
     const selection = editor.getSelection();
     const scrollTop = editor.getScrollTop();
+    applyingExternalValue.current = true;
     editor.setValue(value);
+    applyingExternalValue.current = false;
     if (selection) editor.setSelection(selection);
     editor.setScrollTop(scrollTop);
     // Content commonly arrives while the editor still believes it has a
