@@ -265,7 +265,7 @@ function Workspace({
     // target file has unsaved edits, applying would write over content
     // the user can still see in front of them — and the diff was computed
     // against a version that no longer reflects their intent either.
-    const unsaved = result.diff.map((d) => d.filePath).filter((p) => dirtyPaths.has(p));
+    const unsaved = unsavedAmong(result.diff.map((d) => d.filePath));
     if (unsaved.length > 0) {
       setApplyError(
         `Save your changes to ${unsaved.join(", ")} first — applying would overwrite them.`
@@ -294,7 +294,7 @@ function Workspace({
       const outcome = await applyAgentChange(changeStore, record);
       if (outcome.ok) {
         setApplied(true);
-        await reloadOpenFiles();
+        await reloadChangedFiles(result.diff.map((d) => d.filePath));
         await refreshHistory();
       } else {
         setApplyError(outcome.conflicts.map((c) => c.conflict.message).join(" "));
@@ -307,6 +307,23 @@ function Workspace({
   }
 
   async function handleUndo(entry: HistoryEntry) {
+    const touched = entry.record.diffs.map((d) => d.filePath);
+
+    // Undo rewrites files just as apply does, so it needs the same
+    // protection. Without it, undoing a change to a file the user is
+    // mid-edit in would write over their unsaved work — the reverse of
+    // what an undo is for.
+    const unsaved = unsavedAmong(touched);
+    if (unsaved.length > 0) {
+      setUndoConflicts((prev) => ({
+        ...prev,
+        [entry.record.id]: `Save your changes to ${unsaved.join(
+          ", "
+        )} first — undoing would overwrite them.`,
+      }));
+      return;
+    }
+
     setUndoingId(entry.record.id);
     setUndoConflicts((prev) => {
       const next = { ...prev };
@@ -316,7 +333,7 @@ function Workspace({
     try {
       const outcome = await revertAgentChange(changeStore, entry.record);
       if (outcome.ok) {
-        await reloadOpenFiles();
+        await reloadChangedFiles(touched);
         await refreshHistory();
       } else {
         setUndoConflicts((prev) => ({
@@ -334,15 +351,33 @@ function Workspace({
     }
   }
 
-  /** Editors show stale content after a write until their buffers refresh. */
-  async function reloadOpenFiles() {
+  /**
+   * Refreshes buffers for the files a change actually wrote.
+   *
+   * Scoped to those paths deliberately. Reloading every open file would
+   * pull unsaved edits out from under the user in files the agent never
+   * touched — destroying work while running the code that exists to
+   * protect it.
+   */
+  async function reloadChangedFiles(changedPaths: string[]) {
     const refreshed: Record<string, string> = {};
-    for (const path of openPaths) {
+    for (const path of changedPaths) {
+      if (!openPaths.includes(path)) continue;
       refreshed[path] = await fs.readFile(path);
     }
     setFileContents((prev) => ({ ...prev, ...refreshed }));
-    // Buffers now match disk again, so nothing is outstanding.
-    setDirtyPaths(new Set());
+    setDirtyPaths((prev) => {
+      const next = new Set(prev);
+      // Only these files now match disk. Anything else the user was
+      // editing is still outstanding and stays marked.
+      for (const path of changedPaths) next.delete(path);
+      return next;
+    });
+  }
+
+  /** Files with unsaved edits that a change is about to overwrite. */
+  function unsavedAmong(paths: string[]): string[] {
+    return [...new Set(paths)].filter((path) => dirtyPaths.has(path));
   }
 
   function handleEditorChange(path: string, next: string) {
@@ -389,6 +424,23 @@ function Workspace({
     setNeedsRepo(false);
     await refreshHistory();
     await handleApply();
+  }
+
+  function closeTabGuarded(path: string) {
+    // Closing a tab discards whatever is in its buffer. Silently losing
+    // unsaved edits is the same failure as overwriting them, so confirm.
+    if (dirtyPaths.has(path)) {
+      const discard = window.confirm(
+        `${path} has unsaved changes. Close it and discard them?`
+      );
+      if (!discard) return;
+      setDirtyPaths((prev) => {
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+    }
+    closeTab(path);
   }
 
   // Desktop is where local models are actually expected to run; still
@@ -534,7 +586,7 @@ function Workspace({
               }))}
               value={activeTab}
               onValueChange={setSelectedPath}
-              onClose={closeTab}
+              onClose={closeTabGuarded}
             >
               {openPaths.map((path) => (
                 <TabPanel key={path} value={path} className="min-h-0 flex-1">
