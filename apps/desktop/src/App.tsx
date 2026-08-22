@@ -5,6 +5,8 @@ import {
   AgentPanel,
   Button,
   FileTree,
+  BYOK_PROVIDERS,
+  ByokSection,
   ModelCatalogView,
   OnboardingFlow,
   Panel,
@@ -33,6 +35,7 @@ import { DEFAULT_BUDGET_LIMITS, runAgentTask } from "@paleonyx/agent-core";
 import {
   MockAdapter,
   OllamaAdapter,
+  OpenAiCompatibleAdapter,
   demoRespond,
   loadModelCatalog,
   pingOllama,
@@ -61,6 +64,12 @@ import {
   initGitRepository,
   saveUserEdits,
 } from "./tauri-change-store.js";
+import {
+  deleteProviderKey,
+  getProviderKey,
+  loadKeyedProviderIds,
+  setProviderKey,
+} from "./tauri-secrets.js";
 
 const ZERO_BUDGET_USAGE: BudgetUsage = { toolCalls: 0, tokens: 0 };
 
@@ -92,6 +101,31 @@ export function App() {
     "paleonyx.onboarding.completed",
     false
   );
+  const [keyedProviderIds, setKeyedProviderIds] = useState<string[]>([]);
+
+  const refreshKeyedProviders = useCallback(async () => {
+    setKeyedProviderIds(await loadKeyedProviderIds());
+  }, []);
+
+  useEffect(() => {
+    void refreshKeyedProviders();
+  }, [refreshKeyedProviders]);
+
+  async function handleAddKey(providerId: string, key: string) {
+    await setProviderKey(providerId, key);
+    await refreshKeyedProviders();
+  }
+
+  async function handleRemoveKey(providerId: string) {
+    await deleteProviderKey(providerId);
+    // Removing the key for the provider currently in use must also stop
+    // using it — otherwise the next request fails with an auth error
+    // rather than falling back to something that works.
+    if (selectedModelId?.startsWith(`${providerId}:`)) {
+      setSelectedModelId(null);
+    }
+    await refreshKeyedProviders();
+  }
 
   useEffect(() => {
     loadModelCatalog().then(setCatalog);
@@ -115,6 +149,9 @@ export function App() {
     setShowTooLarge,
     selectedModelId,
     setSelectedModelId,
+    keyedProviderIds,
+    onAddKey: handleAddKey,
+    onRemoveKey: handleRemoveKey,
   };
 
   return (
@@ -131,6 +168,11 @@ export function App() {
             selectedModelId={selectedModelId}
             onSelectModel={(entry) => setSelectedModelId(entry.id)}
             onComplete={() => setOnboarded(true)}
+            byok={{
+              keyedProviderIds,
+              onAddKey: handleAddKey,
+              onRemoveKey: handleRemoveKey,
+            }}
           />
         ) : projectRoot ? (
           <Workspace projectRoot={projectRoot} models={models} />
@@ -139,6 +181,50 @@ export function App() {
         )}
       </TooltipProvider>
     </ThemeProvider>
+  );
+}
+
+/**
+ * Lets a connected provider actually be selected.
+ *
+ * Only rendered once a key exists — offering a model the app cannot
+ * currently reach would be a control that looks live and is not.
+ */
+function ByokModelPicker({
+  keyedProviderIds,
+  selectedModelId,
+  onSelect,
+}: {
+  keyedProviderIds: readonly string[];
+  selectedModelId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="mt-3 flex flex-col gap-1.5">
+      {BYOK_PROVIDERS.filter((provider) => keyedProviderIds.includes(provider.id)).map(
+        (provider) => {
+          const id = `${provider.id}:${provider.defaultModelId}`;
+          const active = selectedModelId === id;
+          return (
+            <button
+              key={provider.id}
+              type="button"
+              onClick={() => onSelect(id)}
+              className={`flex items-center justify-between rounded-md border p-2.5 text-left text-xs transition-colors duration-micro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                active
+                  ? "border-accent bg-accent-muted text-text-primary"
+                  : "border-border-subtle bg-surface-1 text-text-secondary hover:bg-surface-2"
+              }`}
+            >
+              <span className="font-mono">{provider.defaultModelId}</span>
+              <span className="text-text-tertiary">
+                {active ? "In use" : `Use via ${provider.label}`}
+              </span>
+            </button>
+          );
+        }
+      )}
+    </div>
   );
 }
 
@@ -152,6 +238,9 @@ interface ModelsState {
   setShowTooLarge: (show: boolean) => void;
   selectedModelId: string | null;
   setSelectedModelId: (id: string | null) => void;
+  keyedProviderIds: string[];
+  onAddKey: (providerId: string, key: string) => Promise<void>;
+  onRemoveKey: (providerId: string) => Promise<void>;
 }
 
 function OpenProjectScreen({ onOpen }: { onOpen: (path: string) => void }) {
@@ -209,6 +298,9 @@ function Workspace({
     setShowTooLarge,
     selectedModelId,
     setSelectedModelId,
+    keyedProviderIds,
+    onAddKey: handleAddKey,
+    onRemoveKey: handleRemoveKey,
   } = models;
 
   const [files, setFiles] = useState<ProjectFile[]>([]);
@@ -431,6 +523,28 @@ function Workspace({
   // provider ended up active (DESIGN.md §1.8).
   useEffect(() => {
     let cancelled = false;
+
+    // A BYOK selection is stored as "<providerId>:<modelId>", which is
+    // enough to tell a remote choice from a local one without a second
+    // preference to keep in sync.
+    const remote = BYOK_PROVIDERS.find((p) => selectedModelId?.startsWith(`${p.id}:`));
+    if (remote && selectedModelId) {
+      const modelId = selectedModelId.slice(remote.id.length + 1);
+      setProvider(
+        new OpenAiCompatibleAdapter({
+          provider: remote.id,
+          baseUrl: remote.baseUrl,
+          modelId,
+          modelLabel: `${remote.label}: ${modelId}`,
+          // Fetched per request and never held here, so the key does not
+          // live in component state.
+          getApiKey: () => getProviderKey(remote.id),
+          appName: "Paleonyx Studio",
+        })
+      );
+      return;
+    }
+
     pingOllama().then((reachable) => {
       if (!reachable || cancelled) return;
       const modelId = selectedModelId ?? catalog?.installedIds[0];
@@ -528,14 +642,28 @@ function Workspace({
                 </p>
               )}
               {catalog ? (
-                <ModelCatalogView
-                  catalog={catalog}
-                  profile={systemProfile}
-                  showTooLarge={showTooLarge}
-                  onShowTooLargeChange={setShowTooLarge}
-                  activeModelId={selectedModelId ?? undefined}
-                  onSelect={(entry) => setSelectedModelId(entry.id)}
-                />
+                <>
+                  <ModelCatalogView
+                    catalog={catalog}
+                    profile={systemProfile}
+                    showTooLarge={showTooLarge}
+                    onShowTooLargeChange={setShowTooLarge}
+                    activeModelId={selectedModelId ?? undefined}
+                    onSelect={(entry) => setSelectedModelId(entry.id)}
+                  />
+                  <ByokSection
+                    keyedProviderIds={keyedProviderIds}
+                    onAddKey={handleAddKey}
+                    onRemoveKey={handleRemoveKey}
+                  />
+                  {keyedProviderIds.length > 0 && (
+                    <ByokModelPicker
+                      keyedProviderIds={keyedProviderIds}
+                      selectedModelId={selectedModelId}
+                      onSelect={setSelectedModelId}
+                    />
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-text-tertiary">Loading model catalog…</p>
               )}

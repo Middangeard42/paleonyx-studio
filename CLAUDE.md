@@ -192,19 +192,41 @@ Rules for this structure:
 
 ### 4.2 Bring-Your-Own-Key (BYOK) Remote Providers
 
-- v1 ships exactly two BYOK adapters — OpenRouter and Groq (PRD.md §9
+- v1 ships exactly two BYOK providers — OpenRouter and Groq (PRD.md §9
   decision 6) — implementing the same `ChatModelProvider` interface as
   every local adapter. Nothing about agent-core or ui needs to know a
   given provider is remote versus local; that distinction is entirely a
   `ModelCapabilities.isLocal` flag plus the always-visible status-bar
   legibility DESIGN.md requires.
+- They share **one** adapter, `OpenAiCompatibleAdapter`, because both
+  speak the OpenAI chat-completions shape — as does most of the field.
+  For anything OpenAI-compatible, adding a provider is now a
+  configuration entry, not a new file: it touches neither agent-core, nor
+  ui, nor runtime.
 - **API keys are never stored in plaintext**, in a config file or
   anywhere else the app's own on-disk state touches. Desktop uses
-  OS-native secure storage (a Tauri keyring/credential-store plugin, not
-  a hand-rolled encryption scheme). `apps/web` has no durable local
-  storage story for this yet — key entry on web either proxies to a
-  running desktop session or is out of scope until that's designed;
-  never falls back to `localStorage` for a credential.
+  OS-native secure storage via the `keyring` crate (Windows Credential
+  Manager / macOS Keychain / Linux Secret Service), not a hand-rolled
+  encryption scheme. `apps/web` has no durable local storage story for
+  this yet — key entry on web either proxies to a running desktop session
+  or is out of scope until that's designed; never falls back to
+  `localStorage` for a credential. Today web renders an explanation in
+  place of the key form rather than offering one it cannot honour.
+- The credential commands take a **provider allowlist**, not a free-form
+  service name. They are reachable from the webview, and without it a bug
+  there could read or overwrite unrelated entries in the user's
+  credential store — including ones belonging to other applications.
+- **Keys are read per request and never cached.** `getApiKey` is a
+  callback on the remote adapter rather than a value, so a key is
+  fetched at the moment it is used and no copy is parked in application
+  state. Known limit, recorded rather than left implicit: the key does
+  cross into the webview for the duration of a request. Keeping it out
+  of JS entirely means proxying model requests through Rust, which puts
+  an HTTP client and a streaming bridge in the shell — worth doing as
+  hardening, not done yet.
+- **Provider errors must not echo the response body on 401/403.** Some
+  providers include part of the submitted key in a rejection, and error
+  strings end up in logs.
 - Adding a key is the explicit, visible opt-in CLAUDE.md §4's local-first
   default requires for that one provider — it never implicitly enables
   any other remote provider, and removing a key is symmetric (immediate,

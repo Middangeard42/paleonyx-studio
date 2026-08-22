@@ -7,6 +7,7 @@ import type {
 } from "@paleonyx/shared-types";
 import { SKILL_LEVEL_DESCRIPTORS } from "@paleonyx/shared-types";
 import { Button } from "../../primitives/Button.js";
+import { ByokSection } from "../ByokSection.js";
 import { ModelCatalogView } from "../ModelCatalogView.js";
 import { SkillLevelCards } from "./SkillLevelCards.js";
 
@@ -30,6 +31,12 @@ export interface OnboardingFlowProps {
   selectedModelId: string | null;
   onSelectModel: (entry: ModelCatalogEntry) => void;
   onComplete: () => void;
+  /** Omitted where credential storage doesn't exist (see ByokSection). */
+  byok?: {
+    keyedProviderIds: readonly string[];
+    onAddKey: (providerId: string, key: string) => Promise<void>;
+    onRemoveKey: (providerId: string) => Promise<void>;
+  };
 }
 
 /**
@@ -86,14 +93,22 @@ export function OnboardingFlow(props: OnboardingFlowProps) {
               </div>
             )}
             {step === "models" && (
-              <ModelStep
-                catalog={props.catalog}
-                profile={props.profile}
-                showTooLarge={props.showTooLarge}
-                onShowTooLargeChange={props.onShowTooLargeChange}
-                selectedModelId={props.selectedModelId}
-                onSelectModel={props.onSelectModel}
-              />
+              <>
+                <ModelStep
+                  catalog={props.catalog}
+                  profile={props.profile}
+                  showTooLarge={props.showTooLarge}
+                  onShowTooLargeChange={props.onShowTooLargeChange}
+                  selectedModelId={props.selectedModelId}
+                  onSelectModel={props.onSelectModel}
+                />
+                <ByokSection
+                  keyedProviderIds={props.byok?.keyedProviderIds ?? []}
+                  onAddKey={props.byok?.onAddKey ?? (async () => {})}
+                  onRemoveKey={props.byok?.onRemoveKey ?? (async () => {})}
+                  available={props.byok !== undefined}
+                />
+              </>
             )}
             {step === "ready" && (
               <ReadyStep

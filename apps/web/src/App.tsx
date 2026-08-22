@@ -3,6 +3,7 @@ import { Boxes, Files } from "lucide-react";
 import {
   ActivityBar,
   AgentPanel,
+  ByokSection,
   FileTree,
   ModelCatalogView,
   OnboardingFlow,
@@ -196,16 +197,27 @@ export function App() {
               <div className="min-w-0 flex-1 overflow-auto p-4">
                 <div className="mx-auto max-w-3xl">
                   {catalog ? (
-                    <ModelCatalogView
-                      catalog={catalog}
-                      // Browsers have no hardware detection, so entries
-                      // render unannotated rather than guessed at.
-                      profile={undefined}
-                      showTooLarge={showTooLarge}
-                      onShowTooLargeChange={setShowTooLarge}
-                      activeModelId={selectedModelId ?? undefined}
-                      onSelect={(entry) => setSelectedModelId(entry.id)}
-                    />
+                    <>
+                      <ModelCatalogView
+                        catalog={catalog}
+                        // Browsers have no hardware detection, so entries
+                        // render unannotated rather than guessed at.
+                        profile={undefined}
+                        showTooLarge={showTooLarge}
+                        onShowTooLargeChange={setShowTooLarge}
+                        activeModelId={selectedModelId ?? undefined}
+                        onSelect={(entry) => setSelectedModelId(entry.id)}
+                      />
+                      {/* No credential storage in a browser, so this
+                          explains rather than offering a form it cannot
+                          honour (CLAUDE.md §4.2). */}
+                      <ByokSection
+                        keyedProviderIds={[]}
+                        onAddKey={async () => {}}
+                        onRemoveKey={async () => {}}
+                        available={false}
+                      />
+                    </>
                   ) : (
                     <p className="text-sm text-text-tertiary">Loading model catalog…</p>
                   )}

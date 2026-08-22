@@ -3,6 +3,7 @@
 
 mod commands;
 mod git;
+mod secrets;
 mod system_profile;
 
 use commands::ProjectState;
@@ -19,7 +20,11 @@ fn main() {
             git::git_init,
             git::write_project_files,
             git::record_agent_change,
-            git::list_agent_changes
+            git::list_agent_changes,
+            secrets::set_provider_key,
+            secrets::has_provider_key,
+            secrets::get_provider_key,
+            secrets::delete_provider_key
         ])
         .run(tauri::generate_context!())
         .expect("error while running Paleonyx Studio");

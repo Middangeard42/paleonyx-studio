@@ -13,6 +13,17 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sysinfo = "0.33"
 
+# OS-native credential storage: Windows Credential Manager, macOS
+# Keychain, Linux Secret Service. CLAUDE.md §4.2 requires a real
+# credential store rather than a hand-rolled encryption scheme, and this
+# is the established crate for it. `apple-native`/`windows-native`/
+# `sync-secret-service` are the backends for each platform.
+keyring = { version = "3", features = [
+    "apple-native",
+    "windows-native",
+    "sync-secret-service",
+] }
+
 # GPU/VRAM detection is inherently platform-specific and there is no
 # lightweight cross-platform crate that reports dedicated video memory
 # (wgpu enumerates adapters but not their memory). Windows uses DXGI
