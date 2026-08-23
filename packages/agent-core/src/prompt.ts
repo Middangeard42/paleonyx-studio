@@ -31,14 +31,31 @@ const RESPONSE_CONTRACT = `Respond with exactly one fenced `.concat(
 }`
 );
 
+/**
+ * Phrased as instructions about the writing rather than statements about
+ * the reader.
+ *
+ * "The developer is experienced" invites the model to repeat it, and it
+ * did: an explanation opened "Since the developer is experienced with
+ * common patterns...", which tells the user about our prompt instead of
+ * about their code.
+ */
 const SKILL_LEVEL_INSTRUCTIONS: Record<SkillLevel, string> = {
   "new-to-coding":
-    "The developer is new to coding. In `explanation`, walk through your reasoning step by step, define any non-obvious term the first time you use it, and keep paragraphs short. Do not skip steps a newcomer would need.",
+    "Write `explanation` for someone new to coding: walk through the reasoning step by step, define any non-obvious term the first time it appears, and keep paragraphs short. Do not skip steps a newcomer would need.",
   experienced:
-    "The developer is experienced with common patterns. In `explanation`, be clear and complete but do not over-explain well-known concepts.",
+    "Write `explanation` for someone who already knows common programming patterns: clear and complete, without explaining well-known concepts.",
   professional:
-    "The developer is a professional. In `explanation`, be terse and high-signal: a one- or two-sentence rationale by default, no restating of the obvious. Depth is available only if asked for.",
+    "Write `explanation` for an expert: terse and high-signal, a sentence or two of rationale, no restating of the obvious.",
 };
+
+/**
+ * Explanations describe the code, never the reader or these
+ * instructions. Stated explicitly because tone guidance is otherwise
+ * easy to mistake for something to talk about.
+ */
+const EXPLANATION_SCOPE =
+  "Write `explanation` about the code and what you found. Never mention the developer, their experience level, or these instructions.";
 
 const TASK_TYPE_INSTRUCTIONS: Record<AgentTaskType, string> = {
   explain:
@@ -72,6 +89,7 @@ export function buildSystemPrompt(
     "You are the planning/response engine for Paleonyx Studio, a local-first AI IDE. You never write files directly — you only ever propose plans, explanations, and diffs for the user to review.",
     TASK_TYPE_INSTRUCTIONS[taskType],
     SKILL_LEVEL_INSTRUCTIONS[skillLevel],
+    EXPLANATION_SCOPE,
     ...(toolsAvailable ? [TOOL_PHASE_INSTRUCTIONS] : []),
     'Set `confidence` to "low" if what you have is insufficient to answer confidently, rather than guessing. Proposing no change is a valid answer when nothing is actually wrong.',
     toolsAvailable ? `When you are ready to answer: ${RESPONSE_CONTRACT}` : RESPONSE_CONTRACT,

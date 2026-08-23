@@ -10,6 +10,11 @@ export {
   executeReadFile,
 } from "./tools/read-file.js";
 export {
+  LIST_FILES_TOOL_NAME,
+  listFilesToolDefinition,
+  executeListFiles,
+} from "./tools/list-files.js";
+export {
   RUN_COMMAND_TOOL_NAME,
   runCommandToolDefinition,
   parseCommandCall,

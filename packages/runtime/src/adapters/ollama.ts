@@ -99,7 +99,7 @@ export class OllamaAdapter implements ChatModelProvider {
     }
 
     const data = (await response.json()) as OllamaChatResponse;
-    const toolCalls = fromOllamaToolCalls(data.message.tool_calls);
+    const toolCalls = extractToolCalls(data.message, request.tools);
     return {
       content: data.message.content,
       toolCalls,
@@ -175,6 +175,71 @@ function toOllamaTools(request: ChatCompletionRequest) {
       parameters: tool.parameters,
     },
   }));
+}
+
+/**
+ * Pulls tool calls out of a reply, structured or not.
+ *
+ * Ollama usually parses a model's tool call into `message.tool_calls`,
+ * but whether it manages to depends on the model's chat template. Some
+ * builds — qwen2.5-coder:7b among them, observed directly — emit the
+ * call as a JSON object in `content` instead:
+ *
+ *   {"role":"assistant","content":"{\"name\": \"listFiles\", ...}"}
+ *
+ * Reading only the structured field means silently ignoring a model that
+ * is doing exactly what it was asked to, and falling back to a
+ * single-pass answer as though it had declined.
+ */
+function extractToolCalls(
+  message: OllamaMessage,
+  offered: ChatCompletionRequest["tools"]
+): ToolCall[] | undefined {
+  const structured = fromOllamaToolCalls(message.tool_calls);
+  if (structured) return structured;
+  return parseToolCallsFromContent(message.content, offered);
+}
+
+/**
+ * Only accepts content that names a tool we actually offered.
+ *
+ * That constraint is what keeps this from misreading ordinary answers:
+ * a reply that happens to be JSON, or that discusses a tool by name in
+ * prose, will not parse into an object whose `name` matches the offered
+ * set.
+ */
+function parseToolCallsFromContent(
+  content: string,
+  offered: ChatCompletionRequest["tools"]
+): ToolCall[] | undefined {
+  if (!offered?.length) return undefined;
+
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return undefined;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+
+  const names = new Set(offered.map((tool) => tool.name));
+  const candidates = Array.isArray(parsed) ? parsed : [parsed];
+  const calls: ToolCall[] = [];
+
+  for (const [index, candidate] of candidates.entries()) {
+    if (typeof candidate !== "object" || candidate === null) return undefined;
+    const record = candidate as Record<string, unknown>;
+    if (typeof record.name !== "string" || !names.has(record.name)) return undefined;
+    const args =
+      typeof record.arguments === "object" && record.arguments !== null
+        ? (record.arguments as Record<string, unknown>)
+        : {};
+    calls.push({ id: `${index}`, name: record.name, arguments: args });
+  }
+
+  return calls.length > 0 ? calls : undefined;
 }
 
 function fromOllamaToolCalls(

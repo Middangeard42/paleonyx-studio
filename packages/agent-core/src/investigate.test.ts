@@ -278,6 +278,39 @@ describe("running commands", () => {
     await run(provider, { permissionMode: "suggest-only" });
 
     const tools = chatSpy.mock.calls[0]?.[0].tools ?? [];
-    expect(tools.map((t) => t.name)).toEqual(["readFile"]);
+    // Asserts the absence of the command tool rather than an exact list,
+    // so adding a read-only tool later cannot fail a test about permissions.
+    expect(tools.map((t) => t.name)).not.toContain("runCommand");
+  });
+});
+
+describe("discovering what exists", () => {
+  it("lists the project's files when asked", async () => {
+    // Without this the agent can only read paths it already knows, so
+    // "is there a test suite?" can only be answered by guessing names.
+    const provider = new ScriptedProvider([
+      {
+        content: "",
+        toolCalls: [{ id: "1", name: "listFiles", arguments: {} }],
+        finishReason: "tool_calls",
+      },
+      { content: "no tests here", finishReason: "stop" },
+    ]);
+
+    const outcome = await run(provider);
+    expect(outcome.kind).toBe("ready");
+    expect(outcome.steps[0]?.ok).toBe(true);
+    expect(outcome.steps[0]?.detail).toContain("a.ts");
+  });
+
+  it("offers listFiles even without command permission", async () => {
+    // Seeing what exists is a read, so it is available wherever reading
+    // is — it does not depend on the command-running mode.
+    const provider = new ScriptedProvider([{ content: "ok", finishReason: "stop" }]);
+    const chatSpy = vi.spyOn(provider, "chat");
+    await run(provider, { permissionMode: "read-only" });
+
+    const tools = chatSpy.mock.calls[0]?.[0].tools ?? [];
+    expect(tools.map((t) => t.name)).toContain("listFiles");
   });
 });

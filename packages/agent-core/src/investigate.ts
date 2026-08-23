@@ -9,6 +9,11 @@ import type { ChatModelProvider } from "@paleonyx/runtime";
 import type { BudgetTracker } from "./budget.js";
 import { READ_FILE_TOOL_NAME, executeReadFile, readFileToolDefinition } from "./tools/read-file.js";
 import {
+  LIST_FILES_TOOL_NAME,
+  executeListFiles,
+  listFilesToolDefinition,
+} from "./tools/list-files.js";
+import {
   RUN_COMMAND_TOOL_NAME,
   describeCommandResult,
   parseCommandCall,
@@ -70,7 +75,7 @@ export async function investigate(
     return { kind: "ready", messages, steps };
   }
 
-  const tools = [readFileToolDefinition];
+  const tools = [listFilesToolDefinition, readFileToolDefinition];
   const commandsAvailable =
     canRunCommands(options.permissionMode) && options.runCommand !== undefined;
   if (commandsAvailable) tools.push(runCommandToolDefinition);
@@ -135,6 +140,26 @@ async function runTool(
   options: InvestigateOptions,
   commandsAvailable: boolean
 ): Promise<InvestigationStep> {
+  if (call.name === LIST_FILES_TOOL_NAME) {
+    options.onStatus?.("Looking at what's in the project…");
+    try {
+      const listing = await executeListFiles(options.fs);
+      return {
+        tool: call.name,
+        summary: "Listed the project's files",
+        detail: listing,
+        ok: true,
+      };
+    } catch (error) {
+      return {
+        tool: call.name,
+        summary: "Could not list the project's files",
+        detail: error instanceof Error ? error.message : String(error),
+        ok: false,
+      };
+    }
+  }
+
   if (call.name === READ_FILE_TOOL_NAME) {
     const path = typeof call.arguments.path === "string" ? call.arguments.path : "";
     options.onStatus?.(`Reading ${path}…`);
