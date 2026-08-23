@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, RefreshCw } from "lucide-react";
 import clsx from "clsx";
 import type {
   HardwareFit,
@@ -42,6 +42,11 @@ export interface ModelCatalogViewProps {
   onShowTooLargeChange: (show: boolean) => void;
   activeModelId?: string;
   onSelect: (entry: ModelCatalogEntry) => void;
+  /**
+   * Re-reads what the local runtime has installed. Omitted where there
+   * is no local runtime to ask.
+   */
+  onRefresh?: () => void | Promise<void>;
 }
 
 /**
@@ -59,6 +64,7 @@ export function ModelCatalogView({
   onShowTooLargeChange,
   activeModelId,
   onSelect,
+  onRefresh,
 }: ModelCatalogViewProps) {
   const assessed = useMemo(() => {
     return catalog.entries
@@ -91,10 +97,20 @@ export function ModelCatalogView({
         <h3 className="text-xs font-medium uppercase tracking-wide text-text-tertiary">
           Local models
         </h3>
-        <span className="text-xs text-text-tertiary">
+        <span className="flex items-center gap-2 text-xs text-text-tertiary">
           {catalog.source === "bundled"
             ? `Bundled list · ${catalog.retrievedAt}`
             : `Updated ${catalog.retrievedAt}`}
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={() => void onRefresh()}
+              className="flex items-center gap-1 rounded px-1 py-0.5 hover:bg-surface-2 hover:text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              <RefreshCw size={11} />
+              Rescan
+            </button>
+          )}
         </span>
       </div>
 

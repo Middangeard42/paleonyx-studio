@@ -137,8 +137,26 @@ export function App() {
     await refreshKeyedProviders();
   }
 
+  /**
+   * Re-reads what Ollama has installed.
+   *
+   * Called on more than mount because a stale catalog is not merely a
+   * display problem: model capabilities come from these entries, so a
+   * model installed after startup has no entry, falls back to "no tool
+   * calling", and silently runs single-pass however capable it actually
+   * is.
+   */
+  const refreshCatalog = useCallback(async () => {
+    setCatalog(await loadModelCatalog());
+  }, []);
+
+  // Whenever the choice changes — which is exactly when someone has just
+  // installed something and picked it.
   useEffect(() => {
-    loadModelCatalog().then(setCatalog);
+    void refreshCatalog();
+  }, [refreshCatalog, selectedModelId]);
+
+  useEffect(() => {
     new TauriSystemProfileReader()
       .read()
       .then(setSystemProfile)
@@ -162,6 +180,7 @@ export function App() {
     keyedProviderIds,
     onAddKey: handleAddKey,
     onRemoveKey: handleRemoveKey,
+    refreshCatalog,
   };
 
   return (
@@ -251,6 +270,7 @@ interface ModelsState {
   keyedProviderIds: string[];
   onAddKey: (providerId: string, key: string) => Promise<void>;
   onRemoveKey: (providerId: string) => Promise<void>;
+  refreshCatalog: () => Promise<void>;
 }
 
 function OpenProjectScreen({ onOpen }: { onOpen: (path: string) => void }) {
@@ -343,6 +363,7 @@ function Workspace({
     keyedProviderIds,
     onAddKey: handleAddKey,
     onRemoveKey: handleRemoveKey,
+    refreshCatalog,
   } = models;
 
   const [files, setFiles] = useState<ProjectFile[]>([]);
@@ -422,6 +443,12 @@ function Workspace({
   useEffect(() => {
     refreshHistory().catch(() => setHistory([]));
   }, [refreshHistory, projectRoot]);
+
+  // Opening the Models panel is the natural "show me what I have"
+  // moment, and re-reading costs one call to localhost.
+  useEffect(() => {
+    if (activePanel === "models") void refreshCatalog();
+  }, [activePanel, refreshCatalog]);
 
   // Dropping to read-only while a diff-producing task is selected would
   // leave the form on an option it now disables.
@@ -786,6 +813,7 @@ function Workspace({
                     onShowTooLargeChange={setShowTooLarge}
                     activeModelId={selectedModelId ?? undefined}
                     onSelect={(entry) => setSelectedModelId(entry.id)}
+                    onRefresh={refreshCatalog}
                   />
                   <ByokSection
                     keyedProviderIds={keyedProviderIds}
