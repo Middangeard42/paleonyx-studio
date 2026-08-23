@@ -47,6 +47,7 @@ import {
   DEFAULT_SKILL_LEVEL,
   canApplyWithoutApproval,
   canProposeEdits,
+  canRunCommands,
 } from "@paleonyx/shared-types";
 import type {
   AgentChangeRecord,
@@ -890,6 +891,12 @@ function Workspace({
             stale={proposalStale}
             onRerun={handleRunTask}
             canProposeEdits={canProposeEdits(permissionMode)}
+            commandsUnavailableReason={
+              canRunCommands(permissionMode) &&
+              !provider.model.capabilities.supportsToolCalling
+                ? `${provider.model.label} can't call tools, so it won't run commands even though this project allows them. It can still explain and fix code — pick a model marked "can run commands" if you want it running tests.`
+                : null
+            }
           />
 
           <Panel title="History">

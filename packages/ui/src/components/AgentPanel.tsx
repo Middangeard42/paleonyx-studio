@@ -45,6 +45,13 @@ export interface AgentPanelProps {
   onRerun?: () => void;
   /** False under read-only; disables task types that require a diff. */
   canProposeEdits?: boolean;
+  /**
+   * Set when the mode permits commands but the active model cannot call
+   * tools. Surfaced here rather than as a catalog label, because this is
+   * the moment it matters — and because a model without tool calling can
+   * still be the better choice for explaining and fixing code.
+   */
+  commandsUnavailableReason?: string | null;
 }
 
 export function AgentPanel(props: AgentPanelProps) {
@@ -78,6 +85,12 @@ export function AgentPanel(props: AgentPanelProps) {
             canProposeEdits={props.canProposeEdits}
           />
         </section>
+
+        {props.commandsUnavailableReason && (
+          <p className="rounded-md border border-border-subtle bg-surface-2 p-2.5 text-xs text-text-secondary">
+            {props.commandsUnavailableReason}
+          </p>
+        )}
 
         {props.statusMessage && (
           <p className="text-xs text-text-secondary flex items-center gap-1.5" role="status">

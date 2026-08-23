@@ -146,11 +146,14 @@ export function ModelCatalogView({
                 {entry.parametersBillions}B · {formatContext(entry.contextWindow)} context
                 {entry.codeSpecialized && " · code-specialized"}
                 {/* Only meaningful once installed: until then this is the
-                    model's claim, not this build's behaviour. */}
+                    model's claim, not this build's behaviour. Phrased as
+                    what each does rather than what one lacks — a model
+                    without tool calling can still be the stronger choice
+                    for explaining and fixing code. */}
                 {installed.has(entry.id) &&
                   (entry.supportsToolCalling
                     ? " · can run commands"
-                    : " · no tool calling")}
+                    : " · explains and edits only")}
                 {assessment && ` · ${assessment.rationale}`}
               </p>
             </button>

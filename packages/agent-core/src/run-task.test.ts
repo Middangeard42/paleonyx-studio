@@ -135,6 +135,62 @@ describe("runAgentTask with the offline demo responder", () => {
     expect(result.diff).toHaveLength(0);
   });
 
+  it("asks once more when the first reply is not the agreed JSON", async () => {
+    // Observed with a small tool-calling model: after using tools it
+    // replies with prose, the contract being several messages back. One
+    // reminder usually recovers it, and giving up instead would discard
+    // work already paid for.
+    let call = 0;
+    const provider = new MockAdapter({
+      respond: (request) => {
+        call += 1;
+        if (call === 1) return "Let me look at that for you.";
+        return demoRespond(request);
+      },
+      latencyMs: 0,
+    });
+
+    const result = await runAgentTask({
+      provider,
+      fs: new FakeFs({ "src/sum.ts": BUGGY_SUM }),
+      input: {
+        taskType: "bug-fix",
+        instructions: "sum returns NaN",
+        targetFiles: ["src/sum.ts"],
+      },
+      skillLevel: "experienced",
+    });
+
+    expect(call).toBe(2);
+    expect(result.escalation).toBeUndefined();
+    expect(result.diff.length).toBeGreaterThan(0);
+  });
+
+  it("gives up after one retry rather than pestering a model that cannot comply", async () => {
+    let call = 0;
+    const provider = new MockAdapter({
+      respond: () => {
+        call += 1;
+        return "still not JSON";
+      },
+      latencyMs: 0,
+    });
+
+    const result = await runAgentTask({
+      provider,
+      fs: new FakeFs({ "src/sum.ts": BUGGY_SUM }),
+      input: {
+        taskType: "bug-fix",
+        instructions: "sum returns NaN",
+        targetFiles: ["src/sum.ts"],
+      },
+      skillLevel: "experienced",
+    });
+
+    expect(call).toBe(2);
+    expect(result.escalation?.reason).toBe("low-confidence");
+  });
+
   it("escalates on a tool failure instead of proceeding without the file", async () => {
     const result = await runAgentTask({
       provider: provider(),

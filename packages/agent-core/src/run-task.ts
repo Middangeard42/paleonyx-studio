@@ -131,13 +131,41 @@ export async function runAgentTask(
     return escalate(taskType, budget, "budget-exhausted", "Token budget exhausted after the model responded.");
   }
 
-  const parsed = parseAgentResponse(result.content);
+  let parsed = parseAgentResponse(result.content);
+
+  // Ask once more before giving up.
+  //
+  // A model that has just been calling tools often replies with another
+  // tool call, or with prose, rather than the JSON block — the contract
+  // is several messages back by then. Smaller models especially need the
+  // reminder. One retry, budget permitting: repeated nudging would be
+  // pestering a model that cannot do it.
+  if (!parsed.ok && !budget.isExhausted()) {
+    options.onStatus?.("Asking for the summary again…");
+    const retry = await options.provider.chat({
+      messages: [
+        ...messages,
+        { role: "assistant", content: result.content },
+        {
+          role: "user",
+          content:
+            "Reply with only the fenced ```json block described earlier. No tool calls, no prose around it.",
+        },
+      ],
+    });
+    budget.recordTokens(
+      (retry.usage?.promptTokens ?? 0) + (retry.usage?.completionTokens ?? 0)
+    );
+    parsed = parseAgentResponse(retry.content);
+  }
+
   if (!parsed.ok) {
     return escalate(
       taskType,
       budget,
       "low-confidence",
-      `Could not parse a structured plan from the model's response: ${parsed.error}`
+      `Could not parse a structured plan from the model's response: ${parsed.error}`,
+      investigation.steps
     );
   }
 
