@@ -16,6 +16,10 @@ import { BudgetTracker, DEFAULT_BUDGET_LIMITS } from "./budget.js";
 import { buildSystemPrompt, buildUserPrompt } from "./prompt.js";
 import { parseAgentResponse } from "./parse-response.js";
 import { READ_FILE_TOOL_NAME, executeReadFile } from "./tools/read-file.js";
+import { investigate } from "./investigate.js";
+import type { InvestigationStep } from "./investigate.js";
+import type { CommandRunner } from "./tools/run-command.js";
+import { DEFAULT_COMMAND_ALLOWLIST } from "./tools/command-allowlist.js";
 
 export interface RunAgentTaskOptions {
   provider: ChatModelProvider;
@@ -29,6 +33,13 @@ export interface RunAgentTaskOptions {
    */
   permissionMode?: PermissionMode;
   budgetLimits?: typeof DEFAULT_BUDGET_LIMITS;
+  /**
+   * Enables the runCommand tool. Absent means the host cannot run
+   * processes at all — the web harness — which is distinct from a
+   * permission mode that forbids it.
+   */
+  runCommand?: CommandRunner;
+  commandAllowlist?: readonly string[];
   /** Lets the UI render the Task Plan Card as soon as the plan is known. */
   onPlan?: (plan: AgentPlan) => void;
   /**
@@ -88,12 +99,31 @@ export async function runAgentTask(
     }
   }
 
-  const messages: ChatMessage[] = [
+  const baseMessages: ChatMessage[] = [
     { role: "system", content: buildSystemPrompt(taskType, options.skillLevel) },
     { role: "user", content: buildUserPrompt(options.input.instructions, fileContents) },
   ];
 
+  // Gather anything else the agent wants before answering. Providers
+  // without tool calling pass straight through.
   options.onStatus?.("Thinking…");
+  const investigation = await investigate({
+    provider: options.provider,
+    fs: options.fs,
+    messages: baseMessages,
+    budget,
+    permissionMode,
+    commandAllowlist: options.commandAllowlist ?? DEFAULT_COMMAND_ALLOWLIST,
+    runCommand: options.runCommand,
+    onStatus: options.onStatus,
+  });
+
+  if (investigation.kind === "blocked") {
+    return escalate(taskType, budget, investigation.reason, investigation.message, investigation.steps);
+  }
+
+  const messages = investigation.messages;
+  options.onStatus?.("Writing up…");
   const result = await options.provider.chat({ messages });
   budget.recordTokens((result.usage?.promptTokens ?? 0) + (result.usage?.completionTokens ?? 0));
 
@@ -124,6 +154,7 @@ export async function runAgentTask(
     diff: taskType === "bug-fix" ? parsed.value.diff : [],
     confidence: parsed.value.confidence,
     budgetUsage: budget.current,
+    investigation: investigation.steps,
   };
 }
 
@@ -131,7 +162,8 @@ function escalate(
   taskType: AgentTaskType,
   budget: BudgetTracker,
   reason: EscalationReason,
-  message: string
+  message: string,
+  steps: InvestigationStep[] = []
 ): AgentTaskResult {
   return {
     plan: { taskType, summary: "Paused before completing the task.", steps: [] },
@@ -140,5 +172,8 @@ function escalate(
     confidence: "low",
     escalation: { reason, message },
     budgetUsage: budget.current,
+    // Kept even on a pause: seeing which commands ran and what they said
+    // is usually what explains why the agent stopped (CLAUDE.md §7).
+    investigation: steps,
   };
 }

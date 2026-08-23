@@ -8,6 +8,7 @@ import { TaskPlanCard } from "./TaskPlanCard.js";
 import { LessonCallout } from "./LessonCallout.js";
 import { DiffView } from "./DiffView.js";
 import { EscalationBanner } from "./EscalationBanner.js";
+import { InvestigationLog } from "./InvestigationLog.js";
 
 export interface AgentPanelProps {
   skillLevel: SkillLevel;
@@ -83,6 +84,10 @@ export function AgentPanel(props: AgentPanelProps) {
             <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" aria-hidden />
             {props.statusMessage}
           </p>
+        )}
+
+        {props.result && props.result.investigation.length > 0 && (
+          <InvestigationLog steps={props.result.investigation} />
         )}
 
         {props.result?.escalation && <EscalationBanner escalation={props.result.escalation} />}

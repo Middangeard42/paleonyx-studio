@@ -68,4 +68,17 @@ export interface AgentTaskResult {
   confidence: ConfidenceLevel;
   escalation?: AgentEscalation;
   budgetUsage: BudgetUsage;
+  /**
+   * What the agent did before answering — files read, commands run and
+   * what they returned. Shown so the user can see *why* it concluded
+   * what it did, not just what it concluded (CLAUDE.md §7).
+   */
+  investigation: AgentInvestigationStep[];
+}
+
+export interface AgentInvestigationStep {
+  tool: string;
+  summary: string;
+  detail: string;
+  ok: boolean;
 }

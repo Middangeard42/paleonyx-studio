@@ -51,16 +51,15 @@ export function isMorePermissive(from: PermissionMode, to: PermissionMode): bool
 /**
  * Modes the app can currently honour.
  *
- * `can-run-commands` is deliberately absent: no command-execution tool
- * exists yet, so offering the mode would be a setting that grants
- * nothing. It stays in the type and the order — the ranking and the
- * plan are real — but is not selectable until there is something for it
- * to permit.
+ * All four now do something: `can-run-commands` gates the runCommand
+ * tool, which runs only commands matching this project's allowlist
+ * (agent-core's command-allowlist).
  */
 export const SELECTABLE_PERMISSION_MODES: readonly PermissionMode[] = [
   "read-only",
   "suggest-only",
   "auto-apply",
+  "can-run-commands",
 ];
 
 export interface PermissionModeDescriptor {
@@ -91,6 +90,6 @@ export const PERMISSION_MODE_DESCRIPTORS: readonly PermissionModeDescriptor[] = 
     mode: "can-run-commands",
     label: "Can run commands",
     description:
-      "The agent may additionally run allowlisted shell commands (tests, linters, builds).",
+      "Adds the ability to run commands from this project's allowed list, such as tests and linters, and read their output.",
   },
 ];

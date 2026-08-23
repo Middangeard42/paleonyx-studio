@@ -29,7 +29,7 @@ const RAISE_CONSEQUENCE: Partial<Record<PermissionMode, string>> = {
   "auto-apply":
     "The agent will write changes to your files without asking first. Every change is still recorded and can be undone from History, but you will be reviewing them after the fact rather than before.",
   "can-run-commands":
-    "The agent will additionally be able to run allowlisted commands, such as tests and linters.",
+    "The agent will additionally be able to run commands from this project's allowed list — tests, linters, builds — and read their output. It cannot run anything outside that list, and there is no shell, so commands cannot be chained.",
 };
 
 export function PermissionModePicker({

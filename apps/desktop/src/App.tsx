@@ -65,6 +65,7 @@ import type {
 import { TauriFileSystem, openProject } from "./tauri-filesystem.js";
 import { openFolderDialog } from "./tauri-dialog.js";
 import { searchProject } from "./tauri-search.js";
+import { runProjectCommand } from "./tauri-exec.js";
 import { TauriSystemProfileReader } from "./tauri-system-profile.js";
 import {
   TauriChangeStore,
@@ -695,6 +696,9 @@ function Workspace({
         input: { taskType, instructions, targetFiles: contextFiles },
         skillLevel,
         permissionMode,
+        // Supplied unconditionally; agent-core decides whether the tool
+        // is offered at all, based on the mode and the allowlist.
+        runCommand: runProjectCommand,
         onStatus: setStatusMessage,
       });
       setResult(taskResult);

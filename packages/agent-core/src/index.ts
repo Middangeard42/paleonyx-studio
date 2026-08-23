@@ -9,3 +9,18 @@ export {
   readFileToolDefinition,
   executeReadFile,
 } from "./tools/read-file.js";
+export {
+  RUN_COMMAND_TOOL_NAME,
+  runCommandToolDefinition,
+  parseCommandCall,
+  describeCommandResult,
+} from "./tools/run-command.js";
+export type { CommandRunner, CommandResult } from "./tools/run-command.js";
+export {
+  DEFAULT_COMMAND_ALLOWLIST,
+  checkAllowlist,
+  formatCommand,
+} from "./tools/command-allowlist.js";
+export type { CommandRequest, AllowlistDecision } from "./tools/command-allowlist.js";
+export { investigate } from "./investigate.js";
+export type { InvestigationStep, InvestigationOutcome } from "./investigate.js";

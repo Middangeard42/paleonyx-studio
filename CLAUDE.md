@@ -290,7 +290,25 @@ product's core trust promise breaks.
 - **Command execution is allowlisted, not unrestricted.** The agent may
   only run commands the current permission mode and project config permit;
   arbitrary shell execution is never implicitly available just because a
-  model requests it.
+  model requests it. Three properties make that real rather than nominal:
+  - **No shell, ever.** Program and arguments stay separate from the tool
+    schema down to the process spawn. With `sh -c`/`cmd /c`, one
+    allowlisted-looking string could carry `;`, `&&`, or backticks and
+    run anything.
+  - **Allowlist entries match an argument *prefix*, not a program name.**
+    Permitting bare `node` or `python` permits `node -e`/`python -c`,
+    which is arbitrary execution wearing a familiar name; permitting bare
+    `npm` permits `npm run` of any script. `cargo test` permits running
+    the tests, and `cargo test --lib x` because that only narrows the
+    same operation.
+  - **A refused command stops the loop.** Left running, a model could try
+    variations until one happened to match.
+  This reduces what a model can reach for; it is not a sandbox. A user
+  who adds a broad entry gets broad behaviour, and the UI says so rather
+  than implying the list makes command execution safe.
+- Deciding *whether* a command may run is policy and lives in
+  `agent-core`. The shell's `run_command` is mechanism only and does not
+  consult the allowlist — one auditable place for the decision.
 - **Budgets are enforced in `agent-core`, not just displayed in the UI.**
   Max file writes, max commands, max tokens per session are hard stops —
   when hit, the agent pauses and escalates (see §7), it does not
@@ -310,6 +328,14 @@ product's core trust promise breaks.
 - Strategy changes (e.g., falling back from an automated fix to asking a
   clarifying question) are logged in the same timeline as file changes,
   so the user can see *why* the agent did what it did, not just *what*.
+- The multi-step loop (`agent-core/investigate.ts`) records every file
+  read and command run, with full output, and returns those steps even
+  when it stops early — a conclusion drawn from a failing test reads
+  very differently once the test output is visible beside it.
+- The loop engages only for providers whose adapter *declares*
+  tool-calling support; everything else takes the single-pass path.
+  Discovering the capability by watching a request fail is exactly what
+  §4 rules out.
 
 ---
 

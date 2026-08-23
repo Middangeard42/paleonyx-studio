@@ -66,11 +66,12 @@ describe("permission predicates", () => {
     expect(isMorePermissive("auto-apply", "auto-apply")).toBe(false);
   });
 
-  it("does not offer a mode that grants nothing yet", () => {
-    // can-run-commands stays in the ranking but is unselectable until a
-    // command-execution tool exists to permit.
-    expect(SELECTABLE_PERMISSION_MODES).not.toContain("can-run-commands");
-    expect(PERMISSION_MODE_ORDER).toContain("can-run-commands");
+  it("offers every mode that now grants something", () => {
+    // can-run-commands was unselectable until the runCommand tool
+    // existed. Now that it does, every ranked mode is selectable — and
+    // this asserts the two lists agree, so a mode can never be offered
+    // without a meaning or gain one without being offered.
+    expect([...SELECTABLE_PERMISSION_MODES].sort()).toEqual([...PERMISSION_MODE_ORDER].sort());
   });
 });
 

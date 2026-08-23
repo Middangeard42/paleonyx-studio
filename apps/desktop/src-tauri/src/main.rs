@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod exec;
 mod git;
 mod search;
 mod secrets;
@@ -27,7 +28,8 @@ fn main() {
             secrets::has_provider_key,
             secrets::get_provider_key,
             secrets::delete_provider_key,
-            search::search_project
+            search::search_project,
+            exec::run_command
         ])
         .run(tauri::generate_context!())
         .expect("error while running Paleonyx Studio");
