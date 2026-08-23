@@ -50,14 +50,13 @@ export interface RunAgentTaskOptions {
 }
 
 /**
- * v0's agent loop: read the explicitly targeted files through the gated
- * readFile tool, ask the model once for a structured plan/explanation/
- * diff, validate the response, done. This is deliberately not a
- * multi-turn tool-calling loop with self-correction — that's real
- * complexity earned once auto-apply and the vcs write path exist (v1).
- * For a read/suggest-only Explain or Bug Fix flow scoped to files the
- * user already picked via the guided task form, a single pass is
- * sufficient and keeps this stub honest about what it actually does.
+ * Runs one agent task end to end: read the files the user put in
+ * context, let the agent gather whatever else it needs, then ask for the
+ * structured plan, explanation, and diff.
+ *
+ * The gathering phase is skipped entirely for providers that do not
+ * declare tool-calling support, which keeps the single-pass path — still
+ * the one most local models take — unchanged.
  */
 export async function runAgentTask(
   options: RunAgentTaskOptions
@@ -100,7 +99,16 @@ export async function runAgentTask(
   }
 
   const baseMessages: ChatMessage[] = [
-    { role: "system", content: buildSystemPrompt(taskType, options.skillLevel) },
+    {
+      role: "system",
+      // The tool phase is only described when tools will actually be
+      // offered; otherwise it advertises abilities the model does not have.
+      content: buildSystemPrompt(
+        taskType,
+        options.skillLevel,
+        options.provider.model.capabilities.supportsToolCalling
+      ),
+    },
     { role: "user", content: buildUserPrompt(options.input.instructions, fileContents) },
   ];
 

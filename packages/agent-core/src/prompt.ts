@@ -47,16 +47,34 @@ const TASK_TYPE_INSTRUCTIONS: Record<AgentTaskType, string> = {
     "Task type: Bug Fix. Read the provided file contents, identify the bug relevant to the user's description, and propose a minimal fix as a unified-style diff in `diff`. Do not fix unrelated issues in the same response.",
 };
 
+/**
+ * Instructions for the phase before the answer.
+ *
+ * Without this the prompt actively defeats the tool loop: telling a
+ * model to reply with a JSON block "and nothing else" is an instruction
+ * not to call tools, and a well-behaved model obeys it — describing the
+ * file it would like to read instead of reading it. Offering tools while
+ * forbidding their use gets the worst of both.
+ */
+const TOOL_PHASE_INSTRUCTIONS = [
+  "Before answering, you may call the provided tools to gather what you need: read other files, or run an allowlisted command such as the test suite, and read its output.",
+  "Prefer checking to guessing. If you need a file, read it rather than saying you would like to.",
+  "A tool may fail: a file may not exist, a command may not be permitted. That is information. Report what you actually found rather than assuming the thing you expected is there.",
+  "When you have enough to answer, stop calling tools and reply with the JSON block described below.",
+].join(" ");
+
 export function buildSystemPrompt(
   taskType: AgentTaskType,
-  skillLevel: SkillLevel
+  skillLevel: SkillLevel,
+  toolsAvailable = false
 ): string {
   return [
     "You are the planning/response engine for Paleonyx Studio, a local-first AI IDE. You never write files directly — you only ever propose plans, explanations, and diffs for the user to review.",
     TASK_TYPE_INSTRUCTIONS[taskType],
     SKILL_LEVEL_INSTRUCTIONS[skillLevel],
-    "Set `confidence` to \"low\" if the provided file contents are insufficient to complete the task confidently, rather than guessing.",
-    RESPONSE_CONTRACT,
+    ...(toolsAvailable ? [TOOL_PHASE_INSTRUCTIONS] : []),
+    'Set `confidence` to "low" if what you have is insufficient to answer confidently, rather than guessing. Proposing no change is a valid answer when nothing is actually wrong.',
+    toolsAvailable ? `When you are ready to answer: ${RESPONSE_CONTRACT}` : RESPONSE_CONTRACT,
   ].join("\n\n");
 }
 
