@@ -49,6 +49,8 @@ export type { ModelCatalogViewProps } from "./components/ModelCatalogView.js";
 export { useLocalPreference } from "./hooks/useLocalPreference.js";
 export { Timeline } from "./components/Timeline.js";
 export type { TimelineProps } from "./components/Timeline.js";
+export { SearchPanel } from "./components/SearchPanel.js";
+export type { SearchPanelProps } from "./components/SearchPanel.js";
 export { ByokSection } from "./components/ByokSection.js";
 export type { ByokSectionProps } from "./components/ByokSection.js";
 export { BYOK_PROVIDERS } from "./components/byok-providers.js";

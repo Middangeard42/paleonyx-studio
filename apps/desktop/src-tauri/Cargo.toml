@@ -14,6 +14,13 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sysinfo = "0.33"
 
+# Directory walking that honours .gitignore, .ignore, and hidden-file
+# rules — the crate ripgrep is built on. Worth the dependency: gitignore
+# semantics are subtle (negations, anchoring, directory-only patterns),
+# and a search that returns node_modules hits is not a search anyone
+# would use.
+ignore = "0.4"
+
 # OS-native credential storage: Windows Credential Manager, macOS
 # Keychain, Linux Secret Service. CLAUDE.md §4.2 requires a real
 # credential store rather than a hand-rolled encryption scheme, and this

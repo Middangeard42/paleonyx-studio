@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Boxes, Files, FolderOpen } from "lucide-react";
+import { Boxes, Files, FolderOpen, Search } from "lucide-react";
 import {
   ActivityBar,
   AgentPanel,
@@ -10,6 +10,7 @@ import {
   ModelCatalogView,
   OnboardingFlow,
   Panel,
+  SearchPanel,
   StatusBar,
   TabPanel,
   Tabs,
@@ -56,11 +57,14 @@ import type {
   ModelCatalog,
   PermissionMode,
   ProjectFile,
+  SearchOptions,
+  SearchResults,
   SkillLevel,
   SystemProfile,
 } from "@paleonyx/shared-types";
 import { TauriFileSystem, openProject } from "./tauri-filesystem.js";
 import { openFolderDialog } from "./tauri-dialog.js";
+import { searchProject } from "./tauri-search.js";
 import { TauriSystemProfileReader } from "./tauri-system-profile.js";
 import {
   TauriChangeStore,
@@ -376,6 +380,14 @@ function Workspace({
     DEFAULT_PERMISSION_MODE
   );
 
+  const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
+  const [searching, setSearching] = useState(false);
+  /** Object identity, not a number, so re-picking the same line re-jumps. */
+  const [pendingReveal, setPendingReveal] = useState<{
+    path: string;
+    line: number;
+  } | null>(null);
+
   const changeStore = useMemo(() => new TauriChangeStore(), []);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [applying, setApplying] = useState(false);
@@ -537,6 +549,28 @@ function Workspace({
 
   function handleEditorChange(path: string, next: string) {
     setWorkspace((prev) => editBuffer(prev, path, next));
+  }
+
+  async function handleSearch(options: SearchOptions) {
+    setSearching(true);
+    try {
+      setSearchResults(await searchProject(options));
+    } catch {
+      // An unreadable tree is not worth an error banner in a panel whose
+      // empty state already reads as "nothing found".
+      setSearchResults({ files: [], truncated: false, totalMatches: 0 });
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function handleOpenMatch(path: string, line: number) {
+    await openFile(path);
+    setPendingReveal({ path, line });
+  }
+
+  function addPathToContext(path: string) {
+    setContextFiles((prev) => (prev.includes(path) ? prev : [...prev, path]));
   }
 
   const saveFile = useCallback(
@@ -703,6 +737,7 @@ function Workspace({
         <ActivityBar
           items={[
             { id: "files", icon: <Files size={16} />, label: "Files" },
+            { id: "search", icon: <Search size={16} />, label: "Search" },
             { id: "models", icon: <Boxes size={16} />, label: "Models" },
           ]}
           activeId={activePanel}
@@ -748,10 +783,23 @@ function Workspace({
           </div>
         ) : (
           <>
-        <div className="h-full w-56 shrink-0">
-          <Panel title="Explorer">
-            <FileTree files={files} selectedPath={selectedPath} onSelect={openFile} />
-          </Panel>
+        <div className="h-full w-64 shrink-0">
+          {activePanel === "search" ? (
+            <Panel title="Search">
+              <SearchPanel
+                onSearch={handleSearch}
+                results={searchResults}
+                searching={searching}
+                onOpenMatch={handleOpenMatch}
+                onAddToContext={addPathToContext}
+                contextFiles={contextFiles}
+              />
+            </Panel>
+          ) : (
+            <Panel title="Explorer">
+              <FileTree files={files} selectedPath={selectedPath} onSelect={openFile} />
+            </Panel>
+          )}
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -777,6 +825,7 @@ function Workspace({
                     language={files.find((f) => f.path === path)?.language}
                     value={fileContents[path] ?? ""}
                     onChange={(next) => handleEditorChange(path, next)}
+                    reveal={pendingReveal?.path === path ? pendingReveal : null}
                   />
                 </TabPanel>
               ))}

@@ -10,3 +10,4 @@ export * from "./system-profile.js";
 export * from "./model-catalog.js";
 export * from "./history.js";
 export * from "./byok.js";
+export * from "./search.js";

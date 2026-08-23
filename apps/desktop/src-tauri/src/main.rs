@@ -3,6 +3,7 @@
 
 mod commands;
 mod git;
+mod search;
 mod secrets;
 mod system_profile;
 
@@ -25,7 +26,8 @@ fn main() {
             secrets::set_provider_key,
             secrets::has_provider_key,
             secrets::get_provider_key,
-            secrets::delete_provider_key
+            secrets::delete_provider_key,
+            search::search_project
         ])
         .run(tauri::generate_context!())
         .expect("error while running Paleonyx Studio");

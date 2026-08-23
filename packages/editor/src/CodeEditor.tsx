@@ -11,6 +11,12 @@ export interface CodeEditorProps {
   onChange?: (value: string) => void;
   readOnly?: boolean;
   theme?: "dark" | "light";
+  /**
+   * 1-based line to scroll to and select, e.g. after clicking a search
+   * result. Re-applied whenever the object identity changes, so clicking
+   * the same line twice still jumps there rather than appearing dead.
+   */
+  reveal?: { line: number } | null;
 }
 
 /**
@@ -27,7 +33,14 @@ export interface CodeEditorProps {
  * reads `value` at mount shows an empty buffer in the first case and
  * stale content in the second.
  */
-export function CodeEditor({ language, value, onChange, readOnly = false, theme = "dark" }: CodeEditorProps) {
+export function CodeEditor({
+  language,
+  value,
+  onChange,
+  readOnly = false,
+  theme = "dark",
+  reveal = null,
+}: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor>();
   const onChangeRef = useRef(onChange);
@@ -117,6 +130,17 @@ export function CodeEditor({ language, value, onChange, readOnly = false, theme 
   useEffect(() => {
     editorRef.current?.updateOptions({ readOnly });
   }, [readOnly]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !reveal) return;
+    // Centred rather than scrolled minimally: arriving at a search hit
+    // pinned to the bottom edge, with no following context visible, is
+    // disorienting.
+    editor.revealLineInCenter(reveal.line);
+    editor.setPosition({ lineNumber: reveal.line, column: 1 });
+    editor.focus();
+  }, [reveal]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }
