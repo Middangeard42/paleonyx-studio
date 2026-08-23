@@ -382,6 +382,11 @@ function Workspace({
     DEFAULT_PERMISSION_MODE
   );
 
+  /**
+   * Whether the proposal already failed to fit when it arrived, meaning
+   * the model misread the files rather than the user having changed them.
+   */
+  const [bornStale, setBornStale] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
   const [searching, setSearching] = useState(false);
   /** Object identity, not a number, so re-picking the same line re-jumps. */
@@ -700,6 +705,7 @@ function Workspace({
     // fresh diff would render as though it had already been applied.
     setApplied(false);
     setApplyError(null);
+    setBornStale(false);
     try {
       const taskResult = await runAgentTask({
         provider,
@@ -714,6 +720,9 @@ function Workspace({
       });
       setResult(taskResult);
       setBudgetUsage(taskResult.budgetUsage);
+      // Checked against the files as they are right now, before the user
+      // has had any chance to touch them.
+      setBornStale(isProposalStale(workspace, taskResult.diff));
 
       // Auto-apply skips the approval gate, nothing else: the plan and
       // diff above were still produced, and the change is still recorded
@@ -889,6 +898,7 @@ function Workspace({
             applied={applied}
             applyError={applyError}
             stale={proposalStale}
+            bornStale={bornStale}
             onRerun={handleRunTask}
             canProposeEdits={canProposeEdits(permissionMode)}
             commandsUnavailableReason={

@@ -35,12 +35,21 @@ export interface AgentPanelProps {
   applyError?: string | null;
   applied?: boolean;
   /**
-   * True when the files have changed since this was proposed, so the
-   * diff no longer fits. Detected up front rather than on failure — a
-   * proposal that cannot land should not present a button that looks
-   * like it will.
+   * True when the diff no longer fits the files. Detected up front
+   * rather than on failure — a proposal that cannot land should not
+   * present a button that looks like it will.
    */
   stale?: boolean;
+  /**
+   * True when the diff did not fit even at the moment it was produced,
+   * which means the model misread the files rather than the user having
+   * changed them.
+   *
+   * Kept separate from `stale` because the two need opposite messages:
+   * blaming the user for an edit they never made sends them looking for
+   * a mistake of their own that does not exist.
+   */
+  bornStale?: boolean;
   /** Re-runs the same task against the current files. */
   onRerun?: () => void;
   /** False under read-only; disables task types that require a diff. */
@@ -107,7 +116,11 @@ export function AgentPanel(props: AgentPanelProps) {
 
         {props.result && !props.result.escalation && (
           <section className="flex flex-col gap-2">
-            <TaskPlanCard plan={props.result.plan} confidence={props.result.confidence} />
+            <TaskPlanCard
+              plan={props.result.plan}
+              confidence={props.result.confidence}
+              contradicted={props.stale}
+            />
             <LessonCallout title="Why this answer" skillLevel={props.skillLevel}>
               {props.result.explanation}
             </LessonCallout>
@@ -121,6 +134,7 @@ export function AgentPanel(props: AgentPanelProps) {
                     applied={props.applied ?? false}
                     error={props.applyError ?? null}
                     stale={props.stale ?? false}
+                    bornStale={props.bornStale ?? false}
                     onRerun={props.onRerun}
                   />
                 )}
@@ -146,6 +160,7 @@ function ApplyGate({
   applied,
   error,
   stale,
+  bornStale,
   onRerun,
 }: {
   onApply: () => void;
@@ -153,6 +168,7 @@ function ApplyGate({
   applied: boolean;
   error: string | null;
   stale: boolean;
+  bornStale: boolean;
   onRerun?: () => void;
 }) {
   if (applied) {
@@ -172,9 +188,9 @@ function ApplyGate({
     return (
       <div className="flex flex-col gap-2 rounded-md border border-status-warning/40 bg-status-warning/10 p-2.5">
         <p className="text-xs text-text-secondary">
-          You&apos;ve edited these files since this was suggested, so it no
-          longer fits. Your changes are untouched — this suggestion is just out
-          of date now.
+          {bornStale
+            ? "This suggestion doesn't match what's actually in your files, so it can't be applied. The model likely misread them — trying again, or using a larger model, usually helps."
+            : "You've edited these files since this was suggested, so it no longer fits. Your changes are untouched — this suggestion is just out of date now."}
         </p>
         {onRerun && (
           <Button variant="secondary" size="sm" onClick={onRerun} className="self-start">
