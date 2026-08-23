@@ -33,13 +33,30 @@ export async function loadModelCatalog(
   const baseUrl = options.ollamaBaseUrl ?? DEFAULT_OLLAMA_URL;
   const installed = await fetchInstalledModels(baseUrl);
 
+  const installedById = new Map(installed.map((entry) => [entry.id, entry]));
   const bundledIds = new Set(BUNDLED_CATALOG_ENTRIES.map((entry) => entry.id));
   const extras = installed.filter((entry) => !bundledIds.has(entry.id));
+
+  // Where a model is actually installed, what Ollama reports about that
+  // build overrides what the bundled list claims about the model. The
+  // bundled entry describes a model in general; Ollama describes the
+  // specific build sitting on this machine, and they can disagree — a
+  // quantized GGUF may not carry the chat template that makes tool
+  // calling work, whatever the model card says.
+  const merged = BUNDLED_CATALOG_ENTRIES.map((entry) => {
+    const observed = installedById.get(entry.id);
+    if (!observed) return entry;
+    return {
+      ...entry,
+      contextWindow: observed.contextWindow,
+      supportsToolCalling: observed.supportsToolCalling,
+    };
+  });
 
   return {
     source: "bundled",
     retrievedAt: BUNDLED_CATALOG_RETRIEVED_AT,
-    entries: [...BUNDLED_CATALOG_ENTRIES, ...extras],
+    entries: [...merged, ...extras],
     installedIds: installed.map((entry) => entry.id),
   };
 }
@@ -47,7 +64,18 @@ export async function loadModelCatalog(
 interface OllamaTagsResponse {
   models?: {
     name?: unknown;
-    details?: { parameter_size?: unknown; quantization_level?: unknown };
+    /**
+     * Ollama reports what each build can actually do, e.g. ["completion",
+     * "tools"]. Worth reading rather than assuming: a model whose card
+     * describes tool calling may still ship a GGUF whose chat template
+     * does not implement it, and Ollama is the one that knows.
+     */
+    capabilities?: unknown;
+    details?: {
+      parameter_size?: unknown;
+      quantization_level?: unknown;
+      context_length?: unknown;
+    };
   }[];
 }
 
@@ -77,16 +105,20 @@ async function fetchInstalledModels(baseUrl: string): Promise<ModelCatalogEntry[
       runtime: "ollama",
       parametersBillions: parseParameterSize(model.details?.parameter_size) ?? 7,
       defaultQuantization: parseQuantization(model.details?.quantization_level),
-      // Ollama's tag listing doesn't report either of these, and guessing
-      // high would misrepresent what the model can do. Conservative
-      // defaults; a real capability probe is a v1 concern.
-      contextWindow: 8192,
-      supportsToolCalling: false,
+      contextWindow:
+        typeof model.details?.context_length === "number"
+          ? model.details.context_length
+          : 8192,
+      supportsToolCalling: hasCapability(model.capabilities, "tools"),
       description: "Installed locally.",
       codeSpecialized: false,
     });
   }
   return entries;
+}
+
+function hasCapability(raw: unknown, capability: string): boolean {
+  return Array.isArray(raw) && raw.includes(capability);
 }
 
 /** Parses Ollama's "8.0B" / "1.5B" style parameter-size strings. */

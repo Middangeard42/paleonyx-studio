@@ -33,6 +33,12 @@ export const BUNDLED_CATALOG_ENTRIES: ModelCatalogEntry[] = [
     parametersBillions: 9,
     defaultQuantization: "q4_K_M",
     contextWindow: 262144,
+    // The model documents tool calling, but observed behaviour is that
+    // this GGUF build reports only "completion" to Ollama — its chat
+    // template does not implement tool calls. `loadModelCatalog`
+    // overrides this with what Ollama reports once the model is
+    // installed, so the claim below never outranks the build in front of
+    // the user.
     supportsToolCalling: true,
     description:
       "Recommended default. Dense agentic-coding model with native tool calling and a 256k context.",

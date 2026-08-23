@@ -12,6 +12,20 @@ export interface OllamaAdapterOptions {
   modelId: string;
   modelLabel?: string;
   contextWindow?: number;
+  /**
+   * Whether *this build* supports tool calling, from Ollama's own
+   * capability list.
+   *
+   * Not assumed, because it varies per build rather than per model: a
+   * model documented as tool-calling can ship a GGUF whose chat template
+   * does not implement it, and Ollama reports the difference. Asserting
+   * support the build lacks would have agent-core offer tools that are
+   * silently ignored, which looks like the agent choosing not to use
+   * them.
+   *
+   * Defaults to false — the honest answer when nobody has said.
+   */
+  supportsToolCalling?: boolean;
 }
 
 const DEFAULT_BASE_URL = "http://localhost:11434";
@@ -53,10 +67,8 @@ export class OllamaAdapter implements ChatModelProvider {
       label: options.modelLabel ?? options.modelId,
       provider: "ollama",
       capabilities: {
-        // Not discovered per-model in v0 — a real capability lookup
-        // (via `ollama show`) is a v1 concern, not a v0 skeleton one.
         contextWindow: options.contextWindow ?? 8192,
-        supportsToolCalling: true,
+        supportsToolCalling: options.supportsToolCalling ?? false,
         supportsStreaming: true,
         supportsVision: false,
         isLocal: true,

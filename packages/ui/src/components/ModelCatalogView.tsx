@@ -145,6 +145,12 @@ export function ModelCatalogView({
               <p className="text-xs text-text-tertiary">
                 {entry.parametersBillions}B · {formatContext(entry.contextWindow)} context
                 {entry.codeSpecialized && " · code-specialized"}
+                {/* Only meaningful once installed: until then this is the
+                    model's claim, not this build's behaviour. */}
+                {installed.has(entry.id) &&
+                  (entry.supportsToolCalling
+                    ? " · can run commands"
+                    : " · no tool calling")}
                 {assessment && ` · ${assessment.rationale}`}
               </p>
             </button>

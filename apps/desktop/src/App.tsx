@@ -648,7 +648,17 @@ function Workspace({
       if (!reachable || cancelled) return;
       const modelId = selectedModelId ?? catalog?.installedIds[0];
       if (!modelId) return;
-      setProvider(new OllamaAdapter({ modelId, modelLabel: `Ollama: ${modelId}` }));
+      // Capabilities come from Ollama's own report of this build, not
+      // from what the model is documented to do (CLAUDE.md §4).
+      const entry = catalog?.entries.find((e) => e.id === modelId);
+      setProvider(
+        new OllamaAdapter({
+          modelId,
+          modelLabel: `Ollama: ${modelId}`,
+          contextWindow: entry?.contextWindow,
+          supportsToolCalling: entry?.supportsToolCalling,
+        })
+      );
     });
     return () => {
       cancelled = true;
