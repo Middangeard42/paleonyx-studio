@@ -10,7 +10,7 @@ const RESPONSE_CONTRACT = `Respond with exactly one fenced `.concat(
   ` code block and nothing else outside it. The JSON must match this shape:
 {
   "summary": string,               // one sentence describing the plan
-  "steps": [                       // 1-5 steps you took or would take
+  "steps": [                       // 1-5 steps you actually took, in past tense
     { "id": string, "description": string, "targetFiles": string[] }
   ],
   "explanation": string,           // your explanation, pitched at the requested skill level
@@ -92,16 +92,65 @@ export function buildSystemPrompt(
     EXPLANATION_SCOPE,
     ...(toolsAvailable ? [TOOL_PHASE_INSTRUCTIONS] : []),
     'Set `confidence` to "low" if what you have is insufficient to answer confidently, rather than guessing. Proposing no change is a valid answer when nothing is actually wrong.',
-    toolsAvailable ? `When you are ready to answer: ${RESPONSE_CONTRACT}` : RESPONSE_CONTRACT,
   ].join("\n\n");
 }
 
+/**
+ * The answer format, asked for as a separate turn once gathering is done.
+ *
+ * Kept out of the system prompt on purpose. Presented together, the
+ * schema is long, concrete, and last, while the invitation to use tools
+ * is one paragraph in the middle — so a model reliably answers
+ * immediately instead of investigating. Asking for the format only when
+ * it is actually time to answer removes that competition.
+ */
+export function buildAnswerRequest(): string {
+  return `Now answer. ${RESPONSE_CONTRACT}`;
+}
+
+
+/**
+ * Files listed alongside the contents the user selected.
+ *
+ * Included because the alternative does not work in practice. Asked
+ * "why are the tests failing?", a model given only the selected file
+ * either guesses at a path like src/sum.spec.ts or describes wanting to
+ * look — observed repeatedly with qwen2.5-coder:7b, which returns prose
+ * rather than a tool call once it has a file in front of it. Handing it
+ * the listing makes "there is no test suite here" answerable directly,
+ * rather than depending on the model choosing to go and find out.
+ *
+ * Capped, because a large repository would otherwise spend the context
+ * window on paths and leave no room for the code they point at.
+ */
+const MAX_LISTED_PATHS = 200;
+
 export function buildUserPrompt(
   instructions: string,
-  fileContents: Record<string, string>
+  fileContents: Record<string, string>,
+  projectFiles: readonly string[] = []
 ): string {
+  const sections = [`Request: ${instructions}`];
+
+  if (projectFiles.length > 0) {
+    const shown = [...projectFiles].sort().slice(0, MAX_LISTED_PATHS);
+    const omitted = projectFiles.length - shown.length;
+    sections.push(
+      [
+        `Every file in this project (${projectFiles.length}):`,
+        shown.join("\n"),
+        omitted > 0 ? `(${omitted} more not shown.)` : "",
+        "If something you expect is absent from that list, it does not exist here. Say so rather than assuming it is present.",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    );
+  }
+
   const fileSections = Object.entries(fileContents)
     .map(([path, content]) => `--- ${path} ---\n${content}`)
     .join("\n\n");
-  return [`Request: ${instructions}`, fileSections].join("\n\n");
+  if (fileSections) sections.push(fileSections);
+
+  return sections.join("\n\n");
 }

@@ -13,7 +13,7 @@ import type {
 import { DEFAULT_PERMISSION_MODE, canProposeEdits } from "@paleonyx/shared-types";
 import type { ChatModelProvider } from "@paleonyx/runtime";
 import { BudgetTracker, DEFAULT_BUDGET_LIMITS } from "./budget.js";
-import { buildSystemPrompt, buildUserPrompt } from "./prompt.js";
+import { buildAnswerRequest, buildSystemPrompt, buildUserPrompt } from "./prompt.js";
 import { parseAgentResponse } from "./parse-response.js";
 import { READ_FILE_TOOL_NAME, executeReadFile } from "./tools/read-file.js";
 import { investigate } from "./investigate.js";
@@ -74,6 +74,13 @@ export async function runAgentTask(
     );
   }
 
+  // Best effort: a project whose files cannot be listed is still worth
+  // answering about from the contents the user selected.
+  const projectFiles = await options.fs
+    .listFiles()
+    .then((files) => files.map((file) => file.path))
+    .catch(() => [] as string[]);
+
   const fileContents: Record<string, string> = {};
   for (const [index, path] of options.input.targetFiles.entries()) {
     if (budget.isExhausted()) {
@@ -109,7 +116,13 @@ export async function runAgentTask(
         options.provider.model.capabilities.supportsToolCalling
       ),
     },
-    { role: "user", content: buildUserPrompt(options.input.instructions, fileContents) },
+    {
+      role: "user",
+      // The file listing goes in unconditionally: knowing what exists is
+      // cheap, and without it the agent cannot tell "absent" from
+      // "somewhere I have not looked".
+      content: buildUserPrompt(options.input.instructions, fileContents, projectFiles),
+    },
   ];
 
   // Gather anything else the agent wants before answering. Providers
@@ -130,7 +143,13 @@ export async function runAgentTask(
     return escalate(taskType, budget, investigation.reason, investigation.message, investigation.steps);
   }
 
-  const messages = investigation.messages;
+  // The answer format is asked for now, as its own turn, rather than
+  // sitting in the system prompt competing with the invitation to
+  // investigate.
+  const messages: ChatMessage[] = [
+    ...investigation.messages,
+    { role: "user", content: buildAnswerRequest() },
+  ];
   options.onStatus?.("Writing up…");
   const result = await options.provider.chat({ messages });
   budget.recordTokens((result.usage?.promptTokens ?? 0) + (result.usage?.completionTokens ?? 0));
