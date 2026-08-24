@@ -35,7 +35,7 @@ export type { DiffViewProps } from "./components/DiffView.js";
 export { LessonCallout } from "./components/LessonCallout.js";
 export type { LessonCalloutProps } from "./components/LessonCallout.js";
 export { ContextPanel } from "./components/ContextPanel.js";
-export type { ContextPanelProps } from "./components/ContextPanel.js";
+export type { ContextPanelProps, ProjectDocSummary } from "./components/ContextPanel.js";
 export { EscalationBanner } from "./components/EscalationBanner.js";
 export type { EscalationBannerProps } from "./components/EscalationBanner.js";
 export { TaskForm } from "./components/TaskForm.js";

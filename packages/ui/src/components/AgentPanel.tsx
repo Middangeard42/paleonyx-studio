@@ -61,6 +61,10 @@ export interface AgentPanelProps {
    * still be the better choice for explaining and fixing code.
    */
   commandsUnavailableReason?: string | null;
+  /** The project's convention files, found automatically. */
+  projectDocs?: readonly { path: string; truncated: boolean }[];
+  docsEnabled?: boolean;
+  onDocsEnabledChange?: (enabled: boolean) => void;
 }
 
 export function AgentPanel(props: AgentPanelProps) {
@@ -78,6 +82,9 @@ export function AgentPanel(props: AgentPanelProps) {
             files={props.contextFiles}
             onRemove={props.onRemoveContextFile}
             onAdd={props.onAddContextFile}
+            projectDocs={props.projectDocs}
+            docsEnabled={props.docsEnabled}
+            onDocsEnabledChange={props.onDocsEnabledChange}
           />
         </section>
 

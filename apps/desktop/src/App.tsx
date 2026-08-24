@@ -31,7 +31,8 @@ import {
   refreshAfterWrite,
 } from "./workspace-files.js";
 import { CodeEditor } from "@paleonyx/editor";
-import { listProjectFiles } from "@paleonyx/indexing";
+import { findContextDocuments, listProjectFiles } from "@paleonyx/indexing";
+import type { ContextDocument } from "@paleonyx/indexing";
 import { DEFAULT_BUDGET_LIMITS, runAgentTask } from "@paleonyx/agent-core";
 import {
   MockAdapter,
@@ -408,6 +409,12 @@ function Workspace({
    * the model misread the files rather than the user having changed them.
    */
   const [bornStale, setBornStale] = useState(false);
+  /** The project's own convention files, discovered on open. */
+  const [contextDocs, setContextDocs] = useState<ContextDocument[]>([]);
+  const [docsEnabled, setDocsEnabled] = useLocalPreference(
+    `paleonyx.followConventions:${projectRoot}`,
+    true
+  );
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
   const [searching, setSearching] = useState(false);
   /** Object identity, not a number, so re-picking the same line re-jumps. */
@@ -427,6 +434,11 @@ function Workspace({
 
   useEffect(() => {
     listProjectFiles(fs).then(setFiles);
+    // Best effort: a project with no conventions file is the common case,
+    // not a failure.
+    findContextDocuments(fs)
+      .then(setContextDocs)
+      .catch(() => setContextDocs([]));
   }, [fs, projectRoot]);
 
   const refreshHistory = useCallback(async () => {
@@ -743,6 +755,7 @@ function Workspace({
         // Supplied unconditionally; agent-core decides whether the tool
         // is offered at all, based on the mode and the allowlist.
         runCommand: runProjectCommand,
+        contextDocs: docsEnabled ? contextDocs : [],
         onStatus: setStatusMessage,
       });
       setResult(taskResult);
@@ -929,6 +942,12 @@ function Workspace({
             bornStale={bornStale}
             onRerun={handleRunTask}
             canProposeEdits={canProposeEdits(permissionMode)}
+            projectDocs={contextDocs.map((doc) => ({
+              path: doc.path,
+              truncated: doc.truncated,
+            }))}
+            docsEnabled={docsEnabled}
+            onDocsEnabledChange={setDocsEnabled}
             commandsUnavailableReason={
               canRunCommands(permissionMode) &&
               !provider.model.capabilities.supportsToolCalling

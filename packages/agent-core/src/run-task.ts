@@ -40,6 +40,12 @@ export interface RunAgentTaskOptions {
    */
   runCommand?: CommandRunner;
   commandAllowlist?: readonly string[];
+  /**
+   * The project's own conventions, from files like AGENTS.md. Passed in
+   * rather than discovered here: finding them is an indexing concern,
+   * and the caller may let the user turn them off.
+   */
+  contextDocs?: readonly { path: string; content: string }[];
   /** Lets the UI render the Task Plan Card as soon as the plan is known. */
   onPlan?: (plan: AgentPlan) => void;
   /**
@@ -121,7 +127,12 @@ export async function runAgentTask(
       // The file listing goes in unconditionally: knowing what exists is
       // cheap, and without it the agent cannot tell "absent" from
       // "somewhere I have not looked".
-      content: buildUserPrompt(options.input.instructions, fileContents, projectFiles),
+      content: buildUserPrompt(
+        options.input.instructions,
+        fileContents,
+        projectFiles,
+        options.contextDocs ?? []
+      ),
     },
   ];
 

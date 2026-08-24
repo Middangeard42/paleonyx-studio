@@ -125,12 +125,27 @@ export function buildAnswerRequest(): string {
  */
 const MAX_LISTED_PATHS = 200;
 
+export interface ProjectContextDoc {
+  path: string;
+  content: string;
+}
+
 export function buildUserPrompt(
   instructions: string,
   fileContents: Record<string, string>,
-  projectFiles: readonly string[] = []
+  projectFiles: readonly string[] = [],
+  contextDocs: readonly ProjectContextDoc[] = []
 ): string {
   const sections = [`Request: ${instructions}`];
+
+  if (contextDocs.length > 0) {
+    sections.push(
+      [
+        "This project documents its own conventions. Follow them where they apply — they outrank general habit, and a fix that ignores them is not a fix this project wants.",
+        ...contextDocs.map((doc) => `--- ${doc.path} ---\n${doc.content}`),
+      ].join("\n\n")
+    );
+  }
 
   if (projectFiles.length > 0) {
     const shown = [...projectFiles].sort().slice(0, MAX_LISTED_PATHS);
