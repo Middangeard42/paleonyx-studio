@@ -45,6 +45,11 @@ class FakeStore implements ChangeStore {
     return content;
   }
 
+  async deleteFiles(paths: string[]): Promise<void> {
+    for (const path of paths) this.files.delete(path);
+    this.log.push("delete");
+  }
+
   async writeFiles(files: Map<string, string>): Promise<void> {
     if (this.failWrite) {
       this.log.push("write-failed");

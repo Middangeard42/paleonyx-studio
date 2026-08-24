@@ -306,3 +306,91 @@ describe("applyChange — one agent change is one unit", () => {
     expect(result.updated.size).toBe(0);
   });
 });
+
+describe("creating files", () => {
+  const NEW_FILE: FileDiff = {
+    filePath: "src/sum.test.ts",
+    hunks: [
+      hunk("@@ -0,0 +1,3 @@", [
+        ["add", "import { sum } from './sum';"],
+        ["add", ""],
+        ["add", "test('adds', () => expect(sum([1,2])).toBe(3));"],
+      ]),
+    ],
+  };
+
+  it("creates a file from a diff that only adds lines", () => {
+    // Write Tests is impossible without this: tests live in new files.
+    const result = applyChange(new Map(), [NEW_FILE]);
+    expect(result.ok).toBe(true);
+    expect(result.created.has("src/sum.test.ts")).toBe(true);
+    expect(result.updated.get("src/sum.test.ts")).toContain("test('adds'");
+  });
+
+  it("still refuses a diff that expects content the missing file cannot have", () => {
+    // A diff carrying context or removals describes an edit to something
+    // that exists. Creating a file from it would invent the context.
+    const edit: FileDiff = {
+      filePath: "gone.ts",
+      hunks: [hunk("@@ -1,2 +1,2 @@", [["context", "a"], ["remove", "b"], ["add", "B"]])],
+    };
+    const result = applyChange(new Map(), [edit]);
+    expect(result.ok).toBe(false);
+    expect(result.created.size).toBe(0);
+  });
+
+  it("undoes a creation by removing the file", () => {
+    const created = applyChange(new Map(), [NEW_FILE]);
+    const onDisk = new Map(created.updated);
+    const undone = applyChange(onDisk, [NEW_FILE], "revert");
+
+    expect(undone.ok).toBe(true);
+    expect(undone.deleted.has("src/sum.test.ts")).toBe(true);
+    expect(undone.updated.size).toBe(0);
+  });
+
+  it("refuses to delete a created file the user has since edited", () => {
+    // Same no-clobber rule as everywhere else: undo must not discard work
+    // done after the change.
+    const created = applyChange(new Map(), [NEW_FILE]);
+    const edited = new Map(created.updated);
+    edited.set("src/sum.test.ts", `${edited.get("src/sum.test.ts")}\n// my own test`);
+
+    const undone = applyChange(edited, [NEW_FILE], "revert");
+    expect(undone.ok).toBe(false);
+    expect(undone.deleted.size).toBe(0);
+  });
+
+  it("treats undoing an already-absent creation as done, not failed", () => {
+    // The end state is what was asked for.
+    const result = applyChange(new Map(), [NEW_FILE], "revert");
+    expect(result.ok).toBe(true);
+    expect(result.deleted.size).toBe(0);
+  });
+
+  it("does not mistake added lines in an existing file for a creation", () => {
+    // A pure-add hunk against a file that exists is an insertion, and
+    // undoing it must remove those lines rather than delete the file.
+    const insertion: FileDiff = {
+      filePath: "a.ts",
+      hunks: [hunk("@@ -1,1 +1,2 @@", [["context", "alpha"], ["add", "beta"]])],
+    };
+    const files = new Map([["a.ts", "alpha"]]);
+    const applied = applyChange(files, [insertion]);
+    expect(applied.created.size).toBe(0);
+
+    const undone = applyChange(new Map(applied.updated), [insertion], "revert");
+    expect(undone.deleted.size).toBe(0);
+    expect(undone.updated.get("a.ts")).toBe("alpha");
+  });
+
+  it("tolerates CRLF when deciding a created file is untouched", () => {
+    const created = applyChange(new Map(), [NEW_FILE]);
+    const crlf = new Map([
+      ["src/sum.test.ts", created.updated.get("src/sum.test.ts")!.split("\n").join("\r\n")],
+    ]);
+    const undone = applyChange(crlf, [NEW_FILE], "revert");
+    expect(undone.ok).toBe(true);
+    expect(undone.deleted.has("src/sum.test.ts")).toBe(true);
+  });
+});

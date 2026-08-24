@@ -144,6 +144,36 @@ pub fn write_project_files(
     Ok(())
 }
 
+/// Removes files, only ever to undo a creation the agent made.
+///
+/// Paths are re-resolved against the project root exactly as reads and
+/// writes are, so this can no more escape the opened folder than they
+/// can. Whether a deletion is *permitted* is decided in packages/vcs,
+/// which will only ever report one for a file the same change created
+/// and that is untouched since.
+#[tauri::command]
+pub fn delete_project_files(
+    paths: Vec<String>,
+    state: tauri::State<ProjectState>,
+) -> Result<(), String> {
+    let root = project_root(&state)?;
+
+    let mut resolved = Vec::with_capacity(paths.len());
+    for path in &paths {
+        resolved.push(resolve_within_root(&root, path)?);
+    }
+
+    for path in resolved {
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            // Already gone is the requested end state, not a failure.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("Could not remove {}: {e}", path.display())),
+        }
+    }
+    Ok(())
+}
+
 /// Appends one agent change to the shadow history.
 ///
 /// The record arrives as an opaque JSON string: its schema lives in

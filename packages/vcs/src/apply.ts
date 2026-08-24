@@ -123,7 +123,47 @@ export interface MultiFileResult {
   ok: boolean;
   /** Populated only when ok — path to new content, for the caller to write. */
   updated: Map<string, string>;
+  /** Subset of `updated` that did not exist before. */
+  created: Set<string>;
+  /**
+   * Files to remove, which only ever means undoing a creation this same
+   * change made. Nothing else in this package deletes anything.
+   */
+  deleted: Set<string>;
   conflicts: { filePath: string; conflict: Conflict }[];
+}
+
+/**
+ * A diff that only adds lines describes a whole new file.
+ *
+ * Inferred rather than flagged by the model: a flag is a claim we would
+ * have to trust, while the shape of the diff is a fact we can check. A
+ * diff carrying context or removals expects a file to already be there,
+ * so it can never be mistaken for a creation.
+ */
+export function isCreation(diff: FileDiff): boolean {
+  const lines = diff.hunks.flatMap((hunk) => hunk.lines);
+  return lines.length > 0 && lines.every((line) => line.type === "add");
+}
+
+function creationContent(diff: FileDiff): string {
+  return diff.hunks
+    .flatMap((hunk) => hunk.lines)
+    .map((line) => line.content)
+    .join("\n");
+}
+
+/**
+ * Whether `current` is exactly what this creation produced.
+ *
+ * The discriminator between "the change created this file" and "the
+ * change added lines to a file that already existed" — both look like a
+ * pure-add diff, but only the first leaves the file equal to the added
+ * lines and nothing else. Compared on normalized endings so a CRLF
+ * checkout does not read as a user edit.
+ */
+function matchesCreation(current: string, diff: FileDiff): boolean {
+  return splitLines(current).join("\n") === creationContent(diff);
 }
 
 export function applyChange(
@@ -132,21 +172,52 @@ export function applyChange(
   mode: "apply" | "revert" = "apply"
 ): MultiFileResult {
   const updated = new Map<string, string>();
+  const created = new Set<string>();
+  const deleted = new Set<string>();
   const conflicts: { filePath: string; conflict: Conflict }[] = [];
+
+  const fail = (filePath: string, message: string) =>
+    conflicts.push({
+      filePath,
+      conflict: { reason: "context-not-found" as const, hunkIndex: 0, message },
+    });
 
   for (const diff of diffs) {
     const current = files.get(diff.filePath);
+
     if (current === undefined) {
-      conflicts.push({
-        filePath: diff.filePath,
-        conflict: {
-          reason: "context-not-found",
-          hunkIndex: 0,
-          message: `${diff.filePath} is missing, so this change can't be ${
+      // A diff that only adds lines, for a file that is not there, is a
+      // new file. Anything else expects content that is missing.
+      if (mode === "apply" && isCreation(diff)) {
+        updated.set(diff.filePath, creationContent(diff));
+        created.add(diff.filePath);
+      } else if (mode === "revert" && isCreation(diff)) {
+        // Undoing a creation of something already gone. The end state is
+        // what was wanted, so this is not a failure.
+        continue;
+      } else {
+        fail(
+          diff.filePath,
+          `${diff.filePath} is missing, so this change can't be ${
             mode === "apply" ? "applied" : "undone"
-          }.`,
-        },
-      });
+          }.`
+        );
+      }
+      continue;
+    }
+
+    // Undoing a creation means removing the file — the only deletion
+    // anywhere in this package, and only ever of a file the same change
+    // brought into existence.
+    if (mode === "revert" && isCreation(diff)) {
+      if (matchesCreation(current, diff)) {
+        deleted.add(diff.filePath);
+      } else {
+        fail(
+          diff.filePath,
+          `${diff.filePath} has been edited since it was created, so undoing would discard those edits. Delete it yourself if that is what you want.`
+        );
+      }
       continue;
     }
 
@@ -159,7 +230,13 @@ export function applyChange(
   }
 
   if (conflicts.length > 0) {
-    return { ok: false, updated: new Map(), conflicts };
+    return {
+      ok: false,
+      updated: new Map(),
+      created: new Set(),
+      deleted: new Set(),
+      conflicts,
+    };
   }
-  return { ok: true, updated, conflicts: [] };
+  return { ok: true, updated, created, deleted, conflicts: [] };
 }

@@ -65,6 +65,19 @@ const TASK_TYPE_INSTRUCTIONS: Record<AgentTaskType, string> = {
 };
 
 /**
+ * How to ask for a file that does not exist yet.
+ *
+ * A diff of only added lines, for a path not in the project listing, is
+ * how a new file is expressed — there is no separate "create" field to
+ * get wrong. Stated explicitly because the obvious alternative, inventing
+ * context lines for a file with no contents, produces a diff that cannot
+ * apply and looks like a hallucination.
+ */
+const NEW_FILE_INSTRUCTIONS =
+  "To add a file that does not exist yet, give its path as `filePath` and a single hunk whose lines are all `add`. Do not write `context` or `remove` lines for a file that is not there — there is nothing for them to match.";
+
+
+/**
  * Instructions for the phase before the answer.
  *
  * Without this the prompt actively defeats the tool loop: telling a
@@ -88,6 +101,7 @@ export function buildSystemPrompt(
   return [
     "You are the planning/response engine for Paleonyx Studio, a local-first AI IDE. You never write files directly — you only ever propose plans, explanations, and diffs for the user to review.",
     TASK_TYPE_INSTRUCTIONS[taskType],
+    ...(taskType === "bug-fix" ? [NEW_FILE_INSTRUCTIONS] : []),
     SKILL_LEVEL_INSTRUCTIONS[skillLevel],
     EXPLANATION_SCOPE,
     ...(toolsAvailable ? [TOOL_PHASE_INSTRUCTIONS] : []),

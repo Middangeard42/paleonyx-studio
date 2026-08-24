@@ -8,12 +8,22 @@ import { buildHistory } from "./history.js";
  * `apps/desktop` backs these with Tauri commands over the git CLI;
  * tests back them with in-memory fakes.
  *
- * Note what is absent: there is no "delete" and no "reset". Undo is
- * expressed as a forward operation, so nothing here can destroy history.
+ * There is no "reset", and deletion is narrow by construction: it is
+ * reachable only when undoing a creation, only for a file the same
+ * change brought into existence, and only while that file is untouched
+ * since. Undo remains a forward operation — nothing here destroys
+ * history.
  */
 export interface ChangeStore {
   readFile(path: string): Promise<string>;
   writeFiles(files: Map<string, string>): Promise<void>;
+  /**
+   * Removes files. Called only to undo a creation, and only for files
+   * the same change brought into existence — `applyChange` refuses to
+   * report a deletion for anything else, and refuses even then if the
+   * file has been edited since.
+   */
+  deleteFiles(paths: string[]): Promise<void>;
   /** Returns the commit id the record was stored as. */
   recordChange(record: AgentChangeRecord): Promise<string>;
   listChangeRecords(): Promise<{ commitId: string; json: string }[]>;
@@ -74,9 +84,11 @@ async function runChange(
     try {
       files.set(path, await store.readFile(path));
     } catch {
-      // Leave it absent; applyChange reports the missing file as a
-      // conflict with a message naming the path, which is more useful
-      // than a raw read error surfacing from here.
+      // Absent is a legitimate state: a creation is a diff for a file
+      // that is supposed to be missing. Leaving it absent lets
+      // applyChange decide whether that means "create this" or "this
+      // change cannot be applied", and report either with the path
+      // named.
     }
   }
 
@@ -86,6 +98,11 @@ async function runChange(
   }
 
   await store.writeFiles(result.updated);
+  if (result.deleted.size > 0) {
+    await store.deleteFiles([...result.deleted]);
+  }
+  // Recorded last, so a failed write can never leave history claiming a
+  // change that is not on disk.
   const commitId = await store.recordChange(record);
   return { ok: true, commitId };
 }

@@ -22,6 +22,7 @@ fn main() {
             git::git_status,
             git::git_init,
             git::write_project_files,
+            git::delete_project_files,
             git::record_agent_change,
             git::list_agent_changes,
             secrets::set_provider_key,

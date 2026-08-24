@@ -16,6 +16,10 @@ export class TauriChangeStore implements ChangeStore {
     await invoke("write_project_files", { files: Object.fromEntries(files) });
   }
 
+  async deleteFiles(paths: string[]): Promise<void> {
+    await invoke("delete_project_files", { paths });
+  }
+
   async recordChange(record: AgentChangeRecord): Promise<string> {
     return invoke<string>("record_agent_change", {
       changeJson: JSON.stringify(record),

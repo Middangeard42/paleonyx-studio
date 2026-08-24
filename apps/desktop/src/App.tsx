@@ -516,6 +516,9 @@ function Workspace({
       if (outcome.ok) {
         setApplied(true);
         await reloadChangedFiles(target.diff.map((d) => d.filePath));
+        // A change can now add files, so the tree has to be re-read
+        // rather than assumed unchanged.
+        setFiles(await listProjectFiles(fs));
         await refreshHistory();
       } else {
         setApplyError(outcome.conflicts.map((c) => c.conflict.message).join(" "));
@@ -559,6 +562,8 @@ function Workspace({
       const outcome = await revertAgentChange(changeStore, entry.record);
       if (outcome.ok) {
         await reloadChangedFiles(touched);
+        // Undoing a creation removes the file; the tree must lose it too.
+        setFiles(await listProjectFiles(fs));
         await refreshHistory();
       } else {
         setUndoConflicts((prev) => ({
