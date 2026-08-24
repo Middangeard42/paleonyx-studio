@@ -1,6 +1,7 @@
 import type { AgentPlan, ConfidenceLevel } from "@paleonyx/shared-types";
 import { StatusBadge } from "../primitives/StatusBadge.js";
 import type { StatusTone } from "../primitives/StatusBadge.js";
+import { TASK_TYPE_LABELS } from "./task-type-labels.js";
 
 const CONFIDENCE_TONE: Record<ConfidenceLevel, StatusTone> = {
   high: "success",
@@ -45,7 +46,7 @@ export function TaskPlanCard({ plan, confidence, contradicted }: TaskPlanCardPro
       <div className="flex items-start justify-between gap-2">
         <div>
           <span className="text-xs uppercase tracking-wide text-text-tertiary">
-            {plan.taskType === "explain" ? "Explain" : "Bug Fix"} plan
+            {TASK_TYPE_LABELS[plan.taskType]} plan
           </span>
           <p className="text-sm text-text-primary mt-0.5">{plan.summary}</p>
         </div>

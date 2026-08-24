@@ -131,7 +131,7 @@ export function AgentPanel(props: AgentPanelProps) {
             <LessonCallout title="Why this answer" skillLevel={props.skillLevel}>
               {props.result.explanation}
             </LessonCallout>
-            {props.result.plan.taskType === "bug-fix" && (
+            {props.result.plan.taskType !== "explain" && (
               <>
                 <DiffView diffs={props.result.diff} />
                 {props.onApply && props.result.diff.length > 0 && (

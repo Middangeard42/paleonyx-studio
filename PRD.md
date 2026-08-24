@@ -137,7 +137,22 @@ what's excluded is building a full teaching-curriculum product around them.
     §6.1), and switching the setting takes effect immediately, not on next
     session.
 
-13. **Hit a budget or ambiguity wall.** Agent pauses mid-task (budget
+13. **Start from a prompt, with no code written yet.** A user who has an
+    idea but no project answers a short guided form — what they want to
+    make, who it's for, where it should run, what it must do — and
+    Paleonyx composes that into a brief the agent scaffolds a working
+    project from. The generated files arrive as a normal reviewable
+    change: a diff to read, approve, and undo, not a black box that
+    fills a folder. This is the beginner on-ramp the "New to coding"
+    skill level implies, and without it that persona has nowhere to
+    start (§2).
+
+14. **Design by pointing at the running app.** A design mode where the
+    project renders live, the user selects something on screen, and
+    describes the change they want in words rather than editing code.
+    Exact interaction model still open — see §10.
+
+15. **Hit a budget or ambiguity wall.** Agent pauses mid-task (budget
     exhausted, low confidence, repeated tool failure), clearly surfaces
     why, and the user resolves it (raise budget, clarify, redirect)
     without having lost the work done so far.
@@ -305,8 +320,15 @@ key entry are desktop-only — the web companion shows the catalog
 unannotated and routes key management back to desktop for now); mobile
 remote-control for review/approve only.
 
+Also in v1, and specific to the beginner persona §2 commits to: the
+new-project path (§3 journey 13) — a guided form that composes a project
+brief, and a scaffold task type that turns that brief into a first set of
+files through the same plan/diff/apply/undo path every other change uses.
+Without it "New to coding" is a skill level with no way in.
+
 **Later (v2+, not committed scope)**
-Native mobile editing clients; live multiplayer collaboration; plugin
+Design mode and the live-preview surface it needs (§3 journey 14, §10);
+native mobile editing clients; live multiplayer collaboration; plugin
 marketplace; enterprise governance console; expanded skill-sharing/
 community templates; broader remote/cloud model options beyond
 user-opted-in remote providers.
@@ -393,3 +415,31 @@ user-opted-in remote providers.
    small dependency on the aggregators' own uptime/ToS (§8) for wide
    model coverage — including free-tier options — without per-provider
    maintenance scaling linearly with the number of labs supported.
+
+---
+
+## 10. Open Questions
+
+1. **Design-mode hand-off method.** Journey 14 assumes the user can point
+   at their running app and describe a change in words. What's undecided
+   is the mechanism connecting a selected on-screen element back to the
+   source that produced it. Candidates, roughly in order of how much they
+   ask of the project being edited:
+   - **Source-mapped selection.** A dev-time instrumentation step tags
+     rendered elements with their originating file and line, so a click
+     resolves to an exact source location. Precise, but framework-specific
+     and only works for stacks we've built support for.
+   - **Screenshot + description.** The user selects a region; we send the
+     image (to a vision-capable model) plus the project's file list and
+     let the agent locate the code. Framework-agnostic and works on any
+     project, but needs a vision model and is less certain.
+   - **DOM-path + search.** Capture the selected element's tag, classes,
+     and text, then use the existing project search to find candidate
+     source locations and let the agent choose. No vision model and no
+     instrumentation, but ambiguous when markup is generated.
+
+   These aren't mutually exclusive — the third is a plausible baseline
+   that the first refines where we have framework support. Decide before
+   building; the live-preview surface journey 14 depends on is a
+   prerequisite either way, and is worth building first regardless of
+   which hand-off wins.

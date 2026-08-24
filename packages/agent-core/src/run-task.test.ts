@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { FileSystemReader, ProjectFile, SkillLevel } from "@paleonyx/shared-types";
 import { MockAdapter, demoRespond } from "@paleonyx/runtime";
+import { isCreation } from "@paleonyx/vcs";
 import { runAgentTask } from "./run-task.js";
+import { composeProjectBrief } from "./project-brief.js";
 
 /**
  * End-to-end over the offline path: MockAdapter's canned responses
@@ -204,5 +206,101 @@ describe("runAgentTask with the offline demo responder", () => {
     });
 
     expect(result.escalation?.reason).toBe("tool-failure");
+  });
+});
+
+/**
+ * The scaffold path (PRD.md §3 journey 13) end to end.
+ *
+ * A brief goes in; a set of all-new files comes out, and packages/vcs
+ * recognises them as creations. That last part is what makes the wizard
+ * safe: the files arrive as an ordinary reviewable change rather than
+ * something written straight to the folder.
+ */
+describe("runAgentTask for a new project", () => {
+  function scaffoldProvider() {
+    return new MockAdapter({
+      respond: () =>
+        JSON.stringify({
+          summary: "Create a single-page water tracker.",
+          steps: [{ id: "1", description: "Wrote index.html", targetFiles: ["index.html"] }],
+          explanation: "Open index.html in a browser to use it.",
+          diff: [
+            {
+              filePath: "index.html",
+              hunks: [
+                {
+                  header: "@@ -0,0 +1,2 @@",
+                  lines: [
+                    { type: "add", content: "<!doctype html>" },
+                    { type: "add", content: "<h1>Water</h1>" },
+                  ],
+                },
+              ],
+            },
+            {
+              filePath: "README.md",
+              hunks: [
+                {
+                  header: "@@ -0,0 +1,1 @@",
+                  lines: [{ type: "add", content: "Open index.html." }],
+                },
+              ],
+            },
+          ],
+          confidence: "medium",
+        }),
+      latencyMs: 0,
+    });
+  }
+
+  const input = {
+    taskType: "scaffold" as const,
+    instructions: composeProjectBrief({
+      description: "a page that tracks how much water I drink",
+      audience: "",
+      platform: "web" as const,
+      features: [],
+    }),
+    targetFiles: [],
+  };
+
+  it("returns the proposed files as a diff of creations", async () => {
+    const result = await runAgentTask({
+      provider: scaffoldProvider(),
+      fs: new FakeFs({}),
+      input,
+      skillLevel: "new-to-coding",
+    });
+
+    expect(result.escalation).toBeUndefined();
+    expect(result.plan.taskType).toBe("scaffold");
+    expect(result.diff.map((d) => d.filePath)).toEqual(["index.html", "README.md"]);
+    // Every file is new, so packages/vcs must see each as a creation —
+    // otherwise applying would look for context lines that cannot exist.
+    expect(result.diff.every(isCreation)).toBe(true);
+  });
+
+  // Scaffolding writes files, so read-only has to stop it for the same
+  // reason it stops a bug fix — nothing about "there is no code yet"
+  // makes writing more permissible.
+  it("is refused under read-only, before the model is called", async () => {
+    let called = false;
+    const result = await runAgentTask({
+      provider: new MockAdapter({
+        respond: () => {
+          called = true;
+          return "{}";
+        },
+        latencyMs: 0,
+      }),
+      fs: new FakeFs({}),
+      input,
+      skillLevel: "new-to-coding",
+      permissionMode: "read-only",
+    });
+
+    expect(result.escalation?.reason).toBe("permission-denied");
+    expect(called).toBe(false);
   });
 });

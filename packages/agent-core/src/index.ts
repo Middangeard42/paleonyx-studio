@@ -29,3 +29,4 @@ export {
 export type { CommandRequest, AllowlistDecision } from "./tools/command-allowlist.js";
 export { investigate } from "./investigate.js";
 export type { InvestigationStep, InvestigationOutcome } from "./investigate.js";
+export { composeProjectBrief, isBriefRunnable } from "./project-brief.js";

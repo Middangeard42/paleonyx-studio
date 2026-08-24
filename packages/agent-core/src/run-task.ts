@@ -71,7 +71,8 @@ export async function runAgentTask(
   const { taskType } = options.input;
   const permissionMode = options.permissionMode ?? DEFAULT_PERMISSION_MODE;
 
-  if (taskType === "bug-fix" && !canProposeEdits(permissionMode)) {
+  // Scaffolding is a write like any other, so it clears the same bar.
+  if (taskType !== "explain" && !canProposeEdits(permissionMode)) {
     return escalate(
       taskType,
       budget,
@@ -217,7 +218,7 @@ export async function runAgentTask(
   return {
     plan,
     explanation: parsed.value.explanation,
-    diff: taskType === "bug-fix" ? parsed.value.diff : [],
+    diff: taskType === "explain" ? [] : parsed.value.diff,
     confidence: parsed.value.confidence,
     budgetUsage: budget.current,
     investigation: investigation.steps,

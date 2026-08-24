@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Boxes, Files, FolderOpen, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Boxes, Files, FolderOpen, Search, Sparkles } from "lucide-react";
 import {
   ActivityBar,
   AgentPanel,
@@ -10,6 +10,7 @@ import {
   ModelCatalogView,
   OnboardingFlow,
   Panel,
+  ProjectWizard,
   SearchPanel,
   StatusBar,
   TabPanel,
@@ -33,7 +34,11 @@ import {
 import { CodeEditor } from "@paleonyx/editor";
 import { findContextDocuments, listProjectFiles } from "@paleonyx/indexing";
 import type { ContextDocument } from "@paleonyx/indexing";
-import { DEFAULT_BUDGET_LIMITS, runAgentTask } from "@paleonyx/agent-core";
+import {
+  DEFAULT_BUDGET_LIMITS,
+  composeProjectBrief,
+  runAgentTask,
+} from "@paleonyx/agent-core";
 import {
   MockAdapter,
   OllamaAdapter,
@@ -52,12 +57,14 @@ import {
 } from "@paleonyx/shared-types";
 import type {
   AgentChangeRecord,
+  AgentTaskInput,
   AgentTaskResult,
   AgentTaskType,
   BudgetUsage,
   HistoryEntry,
   ModelCatalog,
   PermissionMode,
+  ProjectBrief,
   ProjectFile,
   SearchOptions,
   SearchResults,
@@ -108,6 +115,14 @@ export function App() {
     "paleonyx.selectedModelId",
     null
   );
+  /**
+   * The folder chosen for a brand-new project, held while the wizard
+   * collects the brief. Distinct from `projectRoot`: the workspace must
+   * not mount until there is something for it to do.
+   */
+  const [wizardRoot, setWizardRoot] = useState<string | null>(null);
+  const [pendingBrief, setPendingBrief] = useState<ProjectBrief | null>(null);
+
   const [onboarded, setOnboarded] = useLocalPreference(
     "paleonyx.onboarding.completed",
     false
@@ -205,9 +220,24 @@ export function App() {
             }}
           />
         ) : projectRoot ? (
-          <Workspace projectRoot={projectRoot} models={models} />
+          <Workspace
+            projectRoot={projectRoot}
+            models={models}
+            initialBrief={pendingBrief}
+          />
+        ) : wizardRoot ? (
+          <ProjectWizard
+            projectRoot={wizardRoot}
+            onSubmit={(brief) => {
+              // Both at once: the workspace reads the brief on mount, so
+              // it has to be set before the root that mounts it.
+              setPendingBrief(brief);
+              setProjectRoot(wizardRoot);
+            }}
+            onCancel={() => setWizardRoot(null)}
+          />
         ) : (
-          <OpenProjectScreen onOpen={setProjectRoot} />
+          <OpenProjectScreen onOpen={setProjectRoot} onStartNew={setWizardRoot} />
         )}
       </TooltipProvider>
     </ThemeProvider>
@@ -274,7 +304,13 @@ interface ModelsState {
   refreshCatalog: () => Promise<void>;
 }
 
-function OpenProjectScreen({ onOpen }: { onOpen: (path: string) => void }) {
+function OpenProjectScreen({
+  onOpen,
+  onStartNew,
+}: {
+  onOpen: (path: string) => void;
+  onStartNew: (path: string) => void;
+}) {
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -305,16 +341,41 @@ function OpenProjectScreen({ onOpen }: { onOpen: (path: string) => void }) {
     }
   }
 
+  /**
+   * Starting from nothing still needs a folder — the wizard has to say
+   * where the files will land, and every write path is confined to a
+   * project root. The folder picker can create one, so this is the same
+   * two clicks as opening an existing project.
+   */
+  async function handleStartNew() {
+    setError(null);
+    try {
+      const picked = await openFolderDialog();
+      if (picked === null) return;
+      // Opened here rather than after the wizard so a folder the backend
+      // rejects fails now, before the user has filled in a form.
+      await openProject(picked);
+      onStartNew(picked);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   return (
     <div className="flex h-screen w-screen items-center justify-center bg-surface-0 font-ui text-text-primary">
       <div className="flex w-96 flex-col gap-3">
-        <h1 className="text-lg font-medium">Open a project</h1>
+        <h1 className="text-lg font-medium">Paleonyx Studio</h1>
         <p className="text-sm text-text-secondary">
-          Choose a folder, or paste an absolute path to one.
+          Open a project you already have, or describe something new and let
+          Paleonyx build the first version.
         </p>
-        <Button variant="primary" onClick={handleBrowse}>
+        <Button variant="primary" onClick={handleStartNew}>
+          <Sparkles size={14} />
+          Start something new
+        </Button>
+        <Button variant="secondary" onClick={handleBrowse}>
           <FolderOpen size={14} />
-          Browse for a folder…
+          Open an existing folder…
         </Button>
         <div className="flex items-center gap-2 text-xs text-text-tertiary">
           <span className="h-px flex-1 bg-border-subtle" />
@@ -346,9 +407,17 @@ function OpenProjectScreen({ onOpen }: { onOpen: (path: string) => void }) {
 function Workspace({
   projectRoot,
   models,
+  initialBrief = null,
 }: {
   projectRoot: string;
   models: ModelsState;
+  /**
+   * Set when the workspace was reached through the new-project wizard.
+   * The scaffold run starts on its own once a provider has settled —
+   * the user already pressed a button to get here, and asking them to
+   * press another one that says the same thing would be theatre.
+   */
+  initialBrief?: ProjectBrief | null;
 }) {
   const fs = useMemo(() => new TauriFileSystem(), []);
   const {
@@ -393,6 +462,7 @@ function Workspace({
   );
 
   const [activePanel, setActivePanel] = useState("files");
+  const [providerResolved, setProviderResolved] = useState(false);
 
   /**
    * Per project, not per user (CLAUDE.md §6): letting the agent write
@@ -691,11 +761,17 @@ function Workspace({
           appName: "Paleonyx Studio",
         })
       );
+      setProviderResolved(true);
       return;
     }
 
     pingOllama().then((reachable) => {
-      if (!reachable || cancelled) return;
+      if (cancelled) return;
+      // Settled either way: staying on the mock because nothing is
+      // reachable is an answer, and anything waiting on the provider
+      // needs to stop waiting rather than hang.
+      setProviderResolved(true);
+      if (!reachable) return;
       const modelId = selectedModelId ?? catalog?.installedIds[0];
       if (!modelId) return;
       // Capabilities come from Ollama's own report of this build, not
@@ -744,6 +820,39 @@ function Workspace({
   }
 
   async function handleRunTask() {
+    await runTaskWith({ taskType, instructions, targetFiles: contextFiles });
+  }
+
+  /**
+   * Held in a ref rather than a dependency.
+   *
+   * The run reads most of the workspace — provider, permission mode,
+   * context docs — so a useCallback over it would change identity on
+   * nearly every render, and an effect depending on it would re-fire.
+   * The ref keeps the effect's trigger narrow while still calling the
+   * current version of the function rather than a stale closure.
+   */
+  const runTaskRef = useRef(runTaskWith);
+  runTaskRef.current = runTaskWith;
+
+  // Starts the scaffold run for a project created through the wizard.
+  // Waits for the provider to settle, so the first thing a new user ever
+  // sees is not the mock adapter's canned output.
+  const scaffoldStarted = useRef(false);
+  useEffect(() => {
+    if (!initialBrief || !providerResolved || scaffoldStarted.current) return;
+    scaffoldStarted.current = true;
+    setTaskType("scaffold");
+    void runTaskRef.current({
+      taskType: "scaffold",
+      instructions: composeProjectBrief(initialBrief),
+      // Nothing to put in context: the point of this task is that there
+      // is not any code yet.
+      targetFiles: [],
+    });
+  }, [initialBrief, providerResolved]);
+
+  async function runTaskWith(input: AgentTaskInput) {
     setResult(null);
     // A new proposal is not the previous one — without this reset the
     // fresh diff would render as though it had already been applied.
@@ -754,7 +863,7 @@ function Workspace({
       const taskResult = await runAgentTask({
         provider,
         fs,
-        input: { taskType, instructions, targetFiles: contextFiles },
+        input,
         skillLevel,
         permissionMode,
         // Supplied unconditionally; agent-core decides whether the tool

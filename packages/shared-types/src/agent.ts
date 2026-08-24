@@ -1,9 +1,13 @@
 /**
- * v0 supports two read/suggest-only task types only (PRD.md §9 decision
- * 1). Refactor / Write Tests / Document follow in v1 once the write/undo
- * system (packages/vcs) exists.
+ * Refactor / Write Tests / Document are still to come.
+ *
+ * `scaffold` is the one that does not start from existing code: it turns
+ * a wizard-composed brief into a project's first files (PRD.md §3
+ * journey 13). It is deliberately a task type rather than a separate
+ * pipeline, so the files it produces arrive as an ordinary reviewable
+ * diff and are undone the same way as any other change.
  */
-export type AgentTaskType = "explain" | "bug-fix";
+export type AgentTaskType = "explain" | "bug-fix" | "scaffold";
 
 export interface AgentPlanStep {
   id: string;

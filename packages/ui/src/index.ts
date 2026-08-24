@@ -60,3 +60,6 @@ export { OnboardingFlow } from "./components/onboarding/OnboardingFlow.js";
 export type { OnboardingFlowProps } from "./components/onboarding/OnboardingFlow.js";
 export { SkillLevelCards } from "./components/onboarding/SkillLevelCards.js";
 export type { SkillLevelCardsProps } from "./components/onboarding/SkillLevelCards.js";
+export { ProjectWizard } from "./components/ProjectWizard.js";
+export type { ProjectWizardProps } from "./components/ProjectWizard.js";
+export { TASK_TYPE_LABELS } from "./components/task-type-labels.js";

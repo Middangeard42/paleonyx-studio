@@ -14,7 +14,7 @@ const RESPONSE_CONTRACT = `Respond with exactly one fenced `.concat(
     { "id": string, "description": string, "targetFiles": string[] }
   ],
   "explanation": string,           // your explanation, pitched at the requested skill level
-  "diff": [                        // empty array for an Explain task; hunks for a Bug Fix task
+  "diff": [                        // empty array for an Explain task; hunks for a Bug Fix or New Project task
     {
       "filePath": string,
       "hunks": [
@@ -57,12 +57,32 @@ const SKILL_LEVEL_INSTRUCTIONS: Record<SkillLevel, string> = {
 const EXPLANATION_SCOPE =
   "Write `explanation` about the code and what you found. Never mention the developer, their experience level, or these instructions.";
 
+/**
+ * Turning a brief into a project's first files.
+ *
+ * The size cap is the load-bearing part. Asked to build an app, models
+ * reach for the shape of a finished one — config, tests, a components
+ * directory, a license — and a 7B model producing twenty files produces
+ * twenty mediocre ones, none of which run. A beginner cannot debug that.
+ * Something small that runs is worth more here than something complete
+ * that does not, and the next request can grow it.
+ */
+const SCAFFOLD_INSTRUCTIONS = [
+  "Task type: New Project. The user has described something they want to build and has an empty or nearly empty folder. Produce the first working version as a set of new files in `diff`.",
+  "Aim for the smallest thing that actually runs — usually three to eight files. A running skeleton the user can open and see working beats a fuller structure that does not start.",
+  "Prefer what the user's machine most likely already has, and the fewest moving parts: a single HTML file that opens in a browser beats a build toolchain. Do not add a dependency the project can do without.",
+  "Include a README.md giving, in plain language, the exact steps to run it. Assume the reader has never run a project before.",
+  "Every file is new, so every hunk is all `add` lines.",
+].join(" ");
+
 const TASK_TYPE_INSTRUCTIONS: Record<AgentTaskType, string> = {
   explain:
     "Task type: Explain. Read the provided file contents and explain what the selected code does and why it's written that way. Leave `diff` as an empty array — you are not proposing a change.",
   "bug-fix":
     "Task type: Bug Fix. Read the provided file contents, identify the bug relevant to the user's description, and propose a minimal fix as a unified-style diff in `diff`. Do not fix unrelated issues in the same response.",
+  scaffold: SCAFFOLD_INSTRUCTIONS,
 };
+
 
 /**
  * How to ask for a file that does not exist yet.
@@ -101,7 +121,7 @@ export function buildSystemPrompt(
   return [
     "You are the planning/response engine for Paleonyx Studio, a local-first AI IDE. You never write files directly — you only ever propose plans, explanations, and diffs for the user to review.",
     TASK_TYPE_INSTRUCTIONS[taskType],
-    ...(taskType === "bug-fix" ? [NEW_FILE_INSTRUCTIONS] : []),
+    ...(taskType !== "explain" ? [NEW_FILE_INSTRUCTIONS] : []),
     SKILL_LEVEL_INSTRUCTIONS[skillLevel],
     EXPLANATION_SCOPE,
     ...(toolsAvailable ? [TOOL_PHASE_INSTRUCTIONS] : []),
