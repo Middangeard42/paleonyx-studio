@@ -70,7 +70,8 @@ const EXPLANATION_SCOPE =
 const SCAFFOLD_INSTRUCTIONS = [
   "Task type: New Project. The user has described something they want to build and has an empty or nearly empty folder. Produce the first working version as a set of new files in `diff`.",
   "Aim for the smallest thing that actually runs — usually three to eight files. A running skeleton the user can open and see working beats a fuller structure that does not start.",
-  "Prefer what the user's machine most likely already has, and the fewest moving parts: a single HTML file that opens in a browser beats a build toolchain. Do not add a dependency the project can do without.",
+  "Among the ways of building what was asked for, take the one with the fewest moving parts and the least to install. Do not add a dependency the project can do without. This chooses between approaches that meet the stated target — it is not a reason to build something else.",
+  "If you cannot build what was asked for, or judge that a different form is the better first version, say so in the first sentence of `explanation` and say why. Never substitute silently.",
   "Include a README.md giving, in plain language, the exact steps to run it. Assume the reader has never run a project before.",
   "Every file is new, so every hunk is all `add` lines.",
 ].join(" ");

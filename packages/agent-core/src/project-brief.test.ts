@@ -18,7 +18,7 @@ describe("composeProjectBrief", () => {
     );
     expect(composed).toContain("a habit tracker");
     expect(composed).toContain("my running club");
-    expect(composed).toContain("In a web browser");
+    expect(composed).toContain("in a web browser");
     expect(composed).toContain("- log a run");
     expect(composed).toContain("- show a weekly total");
   });
@@ -58,10 +58,34 @@ describe("composeProjectBrief", () => {
     expect(composed).toContain("why you chose it");
   });
 
-  it("states the platform plainly when the user picked one", () => {
+  it("says what a chosen platform actually asks for", () => {
     const composed = composeProjectBrief(brief({ platform: "command-line" }));
-    expect(composed).toContain("In a terminal");
+    expect(composed).toContain("terminal");
     expect(composed).not.toContain("does not know yet");
+  });
+
+  // The regression this guards: asked for a phone app, the model built
+  // an ordinary desktop web page, because the task instructions argued
+  // for a single HTML file at length and the platform contributed one
+  // clause. A picked platform has to carry real weight.
+  it("gives a picked platform enough guidance to compete with the general advice", () => {
+    for (const platform of ["web", "desktop", "mobile", "command-line"] as const) {
+      const composed = composeProjectBrief(brief({ platform }));
+      const line = composed
+        .split(/\n\n+/)
+        .find((section) => section.startsWith("Where it runs:"));
+      expect(line, `no platform section for ${platform}`).toBeDefined();
+      expect(line!.length, `guidance for ${platform} is too thin`).toBeGreaterThan(80);
+    }
+  });
+
+  it("asks a phone build to be laid out for a phone, and to disclose a web substitution", () => {
+    const composed = composeProjectBrief(brief({ platform: "mobile" }));
+    expect(composed).toContain("phone");
+    expect(composed).toMatch(/touch|one column|viewport/i);
+    // Building a web page for a phone is often right; doing it without
+    // saying so is what this test forbids.
+    expect(composed).toMatch(/say .*explanation|explanation.*why/i);
   });
 });
 
