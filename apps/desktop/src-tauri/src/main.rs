@@ -34,6 +34,7 @@ fn main() {
             secrets::delete_provider_key,
             preview::start_preview,
             preview::stop_preview,
+            preview::set_design_mode,
             search::search_project,
             exec::run_command
         ])

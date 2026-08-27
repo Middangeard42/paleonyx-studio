@@ -25,6 +25,12 @@ use crate::commands::{resolve_within_root, ProjectState};
 #[derive(Default)]
 pub struct PreviewState {
     running: Mutex<Option<RunningPreview>>,
+    /// Whether served pages get the selection script appended.
+    ///
+    /// Shared with the running server rather than read from `running`,
+    /// because it is toggled while the server is already accepting and
+    /// the handler threads need to see the change without a restart.
+    design_mode: Arc<AtomicBool>,
 }
 
 struct RunningPreview {
@@ -87,7 +93,12 @@ pub fn start_preview(
         .map_err(|e| format!("Could not configure the preview server: {e}"))?;
 
     let shutdown = Arc::new(AtomicBool::new(false));
-    spawn_server(listener, root.clone(), Arc::clone(&shutdown));
+    spawn_server(
+        listener,
+        root.clone(),
+        Arc::clone(&shutdown),
+        Arc::clone(&preview.design_mode),
+    );
 
     *running = Some(RunningPreview {
         port,
@@ -95,6 +106,17 @@ pub fn start_preview(
         shutdown,
     });
     Ok(PreviewInfo { port })
+}
+
+/// Turns the selection script on or off for pages served from here.
+///
+/// Its own command rather than a query parameter on the page URL: the
+/// previewed page must not be able to turn instrumentation on for
+/// itself, and a flag the app owns cannot be reached from page content.
+#[tauri::command]
+pub fn set_design_mode(enabled: bool, preview: tauri::State<PreviewState>) -> Result<(), String> {
+    preview.design_mode.store(enabled, Ordering::SeqCst);
+    Ok(())
 }
 
 #[tauri::command]
@@ -109,16 +131,22 @@ pub fn stop_preview(preview: tauri::State<PreviewState>) -> Result<(), String> {
 /// The accept loop. Non-blocking with a short sleep rather than a
 /// blocking accept, so shutdown is a flag check rather than needing a
 /// self-connection to wake the thread up.
-fn spawn_server(listener: TcpListener, root: PathBuf, shutdown: Arc<AtomicBool>) {
+fn spawn_server(
+    listener: TcpListener,
+    root: PathBuf,
+    shutdown: Arc<AtomicBool>,
+    design_mode: Arc<AtomicBool>,
+) {
     std::thread::spawn(move || {
         while !shutdown.load(Ordering::SeqCst) {
             match listener.accept() {
                 Ok((stream, _)) => {
                     let root = root.clone();
+                    let design_mode = Arc::clone(&design_mode);
                     std::thread::spawn(move || {
                         // A failed connection is that client's problem;
                         // the server keeps serving.
-                        let _ = handle_connection(stream, &root);
+                        let _ = handle_connection(stream, &root, &design_mode);
                     });
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -130,7 +158,11 @@ fn spawn_server(listener: TcpListener, root: PathBuf, shutdown: Arc<AtomicBool>)
     });
 }
 
-fn handle_connection(mut stream: TcpStream, root: &Path) -> std::io::Result<()> {
+fn handle_connection(
+    mut stream: TcpStream,
+    root: &Path,
+    design_mode: &AtomicBool,
+) -> std::io::Result<()> {
     stream.set_read_timeout(Some(CLIENT_TIMEOUT))?;
     stream.set_write_timeout(Some(CLIENT_TIMEOUT))?;
 
@@ -167,10 +199,21 @@ fn handle_connection(mut stream: TcpStream, root: &Path) -> std::io::Result<()> 
         resolved
     };
 
-    let body = match std::fs::read(&file) {
+    let mut body = match std::fs::read(&file) {
         Ok(bytes) => bytes,
         Err(_) => return respond_status(&mut stream, 404, "Not Found"),
     };
+
+    // Design mode needs a listener inside the frame, and the app cannot
+    // put one there: the preview is sandboxed without `allow-same-origin`
+    // exactly so previewed code cannot reach back into Paleonyx, which
+    // also means Paleonyx cannot reach into it. Appending the script as
+    // the page is served is the only way in, and it happens only while
+    // the mode is on and only for HTML.
+    let is_html = matches!(content_type(&file), "text/html; charset=utf-8");
+    if is_html && design_mode.load(Ordering::SeqCst) {
+        body = inject_selection_script(body);
+    }
 
     let header = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n",
@@ -260,6 +303,98 @@ fn content_type(path: &Path) -> &'static str {
     }
 }
 
+/// The script appended to served HTML while design mode is on.
+///
+/// It reports and highlights; it never changes the page's own content.
+/// Clicks select instead of activating, because a link that navigates
+/// takes the user away from the thing they were pointing at.
+const SELECTION_SCRIPT: &str = r#"<script data-paleonyx="selection">
+(function () {
+  var HL = "paleonyx-design-highlight";
+  var style = document.createElement("style");
+  style.setAttribute("data-paleonyx", "selection");
+  style.textContent = "." + HL + "{outline:2px solid #c9803f !important;outline-offset:2px !important;}";
+  (document.head || document.documentElement).appendChild(style);
+
+  function classesOf(el) {
+    var raw = el.getAttribute("class") || "";
+    return raw.trim().split(/\s+/).filter(function (c) {
+      return c && c !== HL;
+    });
+  }
+
+  // Ancestor chain, outermost first. Capped: past a few levels it stops
+  // helping tell two elements apart and starts filling the prompt.
+  function pathOf(el) {
+    var parts = [];
+    var node = el;
+    while (node && node.nodeType === 1 && parts.length < 6) {
+      var name = node.tagName.toLowerCase();
+      var first = classesOf(node)[0];
+      parts.unshift(first ? name + "." + first : name);
+      node = node.parentElement;
+    }
+    return parts;
+  }
+
+  var current = null;
+  document.addEventListener(
+    "click",
+    function (ev) {
+      var target = ev.target;
+      if (!target || target.nodeType !== 1) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (current) current.classList.remove(HL);
+      current = target;
+      target.classList.add(HL);
+      var rect = target.getBoundingClientRect();
+      parent.postMessage(
+        {
+          source: "paleonyx-preview",
+          kind: "select",
+          tag: target.tagName,
+          id: target.id || null,
+          classes: classesOf(target),
+          text: (target.textContent || "").trim().slice(0, 120),
+          path: pathOf(target),
+          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+        },
+        "*"
+      );
+    },
+    true
+  );
+
+  parent.postMessage({ source: "paleonyx-preview", kind: "ready" }, "*");
+})();
+</script>"#;
+
+/// Appends the selection script to a served page.
+///
+/// Before `</body>` when there is one so the script runs after the
+/// document it inspects, and at the end otherwise — a fragment without
+/// a body tag is still a page a browser will render.
+fn inject_selection_script(body: Vec<u8>) -> Vec<u8> {
+    let html = match String::from_utf8(body) {
+        Ok(html) => html,
+        // Not decodable as UTF-8, so not something to splice a script
+        // into. The error hands the bytes back, so it is served exactly
+        // as it was found rather than corrupted or dropped.
+        Err(original) => return original.into_bytes(),
+    };
+
+    let injected = match find_last_ignoring_case(&html, "</body>") {
+        Some(at) => format!("{}{}{}", &html[..at], SELECTION_SCRIPT, &html[at..]),
+        None => format!("{html}{SELECTION_SCRIPT}"),
+    };
+    injected.into_bytes()
+}
+
+fn find_last_ignoring_case(haystack: &str, needle: &str) -> Option<usize> {
+    haystack.to_ascii_lowercase().rfind(needle)
+}
+
 fn respond_status(stream: &mut TcpStream, code: u16, reason: &str) -> std::io::Result<()> {
     let body = format!("{code} {reason}");
     let response = format!(
@@ -274,7 +409,7 @@ fn respond_status(stream: &mut TcpStream, code: u16, reason: &str) -> std::io::R
 mod tests {
     use super::*;
 
-    fn unique_dir(tag: &str) -> PathBuf {
+    pub(super) fn unique_dir(tag: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -287,16 +422,25 @@ mod tests {
     /// Starts a server over a real socket and returns its port, so the
     /// tests exercise the same accept/parse/serve path a browser hits
     /// rather than a stubbed version of it.
-    fn serve(root: &Path) -> u16 {
+    pub(super) fn serve(root: &Path) -> u16 {
+        serve_with_design(root, false)
+    }
+
+    pub(super) fn serve_with_design(root: &Path, design: bool) -> u16 {
         let listener =
             TcpListener::bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))).unwrap();
         let port = listener.local_addr().unwrap().port();
         listener.set_nonblocking(true).unwrap();
-        spawn_server(listener, root.to_path_buf(), Arc::new(AtomicBool::new(false)));
+        spawn_server(
+            listener,
+            root.to_path_buf(),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(design)),
+        );
         port
     }
 
-    fn request(port: u16, raw: &str) -> String {
+    pub(super) fn request(port: u16, raw: &str) -> String {
         let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
         stream.write_all(raw.as_bytes()).unwrap();
         let mut response = Vec::new();
@@ -434,5 +578,119 @@ mod tests {
         // the previous version and look like the change did not apply.
         let response = request(port, "GET /index.html HTTP/1.1\r\nHost: x\r\n\r\n");
         assert!(response.contains("Cache-Control: no-store"), "{response}");
+    }
+}
+
+#[cfg(test)]
+mod design_mode_tests {
+    use super::tests::{request, serve_with_design, unique_dir};
+    use super::*;
+
+    /// Pulls the body out of a raw HTTP response, and the declared
+    /// length, so the two can be compared.
+    fn split_response(response: &str) -> (usize, &str) {
+        let (head, body) = response.split_once("\r\n\r\n").expect("no header break");
+        let declared = head
+            .lines()
+            .find_map(|line| line.strip_prefix("Content-Length: "))
+            .expect("no Content-Length")
+            .trim()
+            .parse()
+            .expect("unparseable Content-Length");
+        (declared, body)
+    }
+
+    #[test]
+    fn leaves_pages_alone_when_design_mode_is_off() {
+        let root = unique_dir("design-off");
+        std::fs::write(root.join("index.html"), "<body><h1>hi</h1></body>").unwrap();
+        let port = serve_with_design(&root, false);
+
+        let response = request(port, "GET /index.html HTTP/1.1\r\nHost: x\r\n\r\n");
+        assert!(!response.contains("paleonyx-preview"), "{response}");
+    }
+
+    #[test]
+    fn injects_the_selection_script_when_design_mode_is_on() {
+        let root = unique_dir("design-on");
+        std::fs::write(root.join("index.html"), "<body><h1>hi</h1></body>").unwrap();
+        let port = serve_with_design(&root, true);
+
+        let response = request(port, "GET /index.html HTTP/1.1\r\nHost: x\r\n\r\n");
+        assert!(response.contains("paleonyx-preview"), "{response}");
+        // Before the closing tag, so it runs against a built document.
+        let script_at = response.find("data-paleonyx").expect("script missing");
+        let body_end = response.rfind("</body>").expect("body end missing");
+        assert!(script_at < body_end, "script landed after </body>");
+    }
+
+    /// A mismatch here truncates the page in the browser, which looks
+    /// like the project is broken rather than like we miscounted.
+    #[test]
+    fn content_length_matches_the_injected_body() {
+        let root = unique_dir("design-length");
+        std::fs::write(root.join("index.html"), "<body><h1>hi</h1></body>").unwrap();
+        let port = serve_with_design(&root, true);
+
+        let response = request(port, "GET /index.html HTTP/1.1\r\nHost: x\r\n\r\n");
+        let (declared, body) = split_response(&response);
+        assert_eq!(
+            declared,
+            body.len(),
+            "declared {declared}, actual {}",
+            body.len()
+        );
+    }
+
+    #[test]
+    fn appends_when_the_page_has_no_body_tag() {
+        let root = unique_dir("design-nobody");
+        std::fs::write(root.join("index.html"), "<h1>fragment</h1>").unwrap();
+        let port = serve_with_design(&root, true);
+
+        let response = request(port, "GET /index.html HTTP/1.1\r\nHost: x\r\n\r\n");
+        assert!(response.contains("paleonyx-preview"), "{response}");
+        let (declared, body) = split_response(&response);
+        assert_eq!(declared, body.len());
+    }
+
+    /// Injecting into a script or stylesheet would corrupt it — the
+    /// page would fail to load the very file it needs.
+    #[test]
+    fn never_injects_into_anything_that_is_not_html() {
+        let root = unique_dir("design-assets");
+        std::fs::write(root.join("app.js"), "console.log('hi')").unwrap();
+        std::fs::write(root.join("style.css"), "body{color:red}").unwrap();
+        std::fs::write(root.join("data.json"), "{\"a\":1}").unwrap();
+        let port = serve_with_design(&root, true);
+
+        for name in ["app.js", "style.css", "data.json"] {
+            let response = request(port, &format!("GET /{name} HTTP/1.1\r\nHost: x\r\n\r\n"));
+            assert!(
+                !response.contains("paleonyx-preview"),
+                "{name} was instrumented: {response}"
+            );
+        }
+    }
+
+    #[test]
+    fn matches_a_closing_body_tag_in_any_case() {
+        let root = unique_dir("design-case");
+        std::fs::write(root.join("index.html"), "<BODY><h1>hi</h1></BODY>").unwrap();
+        let port = serve_with_design(&root, true);
+
+        let response = request(port, "GET /index.html HTTP/1.1\r\nHost: x\r\n\r\n");
+        let script_at = response.find("data-paleonyx").expect("script missing");
+        let body_end = response.rfind("</BODY>").expect("body end missing");
+        assert!(script_at < body_end, "script landed after </BODY>");
+    }
+
+    /// A file that is not valid UTF-8 must come back exactly as found.
+    /// Returning nothing would serve an empty page and look like a
+    /// missing file rather than a skipped injection.
+    #[test]
+    fn returns_undecodable_bodies_untouched() {
+        let original = vec![0xff, 0xfe, 0x00, 0x41];
+        assert_eq!(inject_selection_script(original.clone()), original);
     }
 }

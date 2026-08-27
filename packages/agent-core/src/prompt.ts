@@ -78,12 +78,29 @@ const SCAFFOLD_INSTRUCTIONS = [
   "Every file is new, so every hunk is all `add` lines.",
 ].join(" ");
 
+/**
+ * Changing what the user pointed at, and only that.
+ *
+ * The distinctive risk of this task is scope. The user selected one
+ * button; a model given a whole page and asked to "make it green" will
+ * cheerfully restyle the rest of it, and because the request came from
+ * pointing rather than naming, the user has no file in mind to check
+ * against. Narrowness is the property that makes pointing trustworthy.
+ */
+const DESIGN_CHANGE_INSTRUCTIONS = [
+  "Task type: Design Change. The user is looking at their project running, has clicked one element on the page, and described how they want it to change.",
+  "Change only that element. Leave everything else on the page exactly as it is, including elements that look like it — a request about one button is not a request about every button.",
+  "Prefer the smallest edit that achieves it. Restructuring the page to make a colour change is not the change that was asked for.",
+  "If what they asked for is ambiguous about the element you found, say what you assumed in `explanation` rather than picking silently.",
+].join(" ")
+
 const TASK_TYPE_INSTRUCTIONS: Record<AgentTaskType, string> = {
   explain:
     "Task type: Explain. Read the provided file contents and explain what the selected code does and why it's written that way. Leave `diff` as an empty array — you are not proposing a change.",
   "bug-fix":
     "Task type: Bug Fix. Read the provided file contents, identify the bug relevant to the user's description, and propose a minimal fix as a unified-style diff in `diff`. Do not fix unrelated issues in the same response.",
   scaffold: SCAFFOLD_INSTRUCTIONS,
+  "design-change": DESIGN_CHANGE_INSTRUCTIONS,
 };
 
 

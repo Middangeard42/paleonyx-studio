@@ -65,3 +65,4 @@ export type { ProjectWizardProps } from "./components/ProjectWizard.js";
 export { TASK_TYPE_LABELS } from "./components/task-type-labels.js";
 export { PreviewPanel } from "./components/PreviewPanel.js";
 export type { PreviewPanelProps, PreviewViewportId } from "./components/PreviewPanel.js";
+export { describeSelection } from "./components/PreviewPanel.js";

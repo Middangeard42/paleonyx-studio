@@ -30,3 +30,4 @@ export type { CommandRequest, AllowlistDecision } from "./tools/command-allowlis
 export { investigate } from "./investigate.js";
 export type { InvestigationStep, InvestigationOutcome } from "./investigate.js";
 export { composeProjectBrief, isBriefRunnable } from "./project-brief.js";
+export { composeDesignRequest, isSelectionLocatable } from "./design-request.js";

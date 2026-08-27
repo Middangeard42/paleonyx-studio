@@ -7,7 +7,12 @@
  * pipeline, so the files it produces arrive as an ordinary reviewable
  * diff and are undone the same way as any other change.
  */
-export type AgentTaskType = "explain" | "bug-fix" | "scaffold";
+export type AgentTaskType =
+  | "explain"
+  | "bug-fix"
+  | "scaffold"
+  /** A change described by pointing at the running page (§3 journey 14). */
+  | "design-change";
 
 export interface AgentPlanStep {
   id: string;

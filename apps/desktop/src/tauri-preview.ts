@@ -33,3 +33,15 @@ export function previewUrl(port: number, entryPath: string): string {
     .join("/");
   return `http://127.0.0.1:${port}/${encoded}`;
 }
+
+/**
+ * Turns the preview server's selection script on or off.
+ *
+ * The flag lives in the shell rather than in a URL, so a previewed page
+ * cannot instrument itself. Callers must reload the frame afterwards —
+ * the script is added as a page is served, so an already-loaded page
+ * does not have it.
+ */
+export async function setDesignMode(enabled: boolean): Promise<void> {
+  await invoke("set_design_mode", { enabled });
+}

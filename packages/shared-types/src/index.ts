@@ -12,3 +12,4 @@ export * from "./history.js";
 export * from "./byok.js";
 export * from "./search.js";
 export * from "./project-brief.js";
+export * from "./design.js";

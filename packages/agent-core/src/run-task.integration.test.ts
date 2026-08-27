@@ -21,8 +21,25 @@ class DemoFs implements FileSystemReader {
  * The whole pipeline against a real model, mirroring what the desktop
  * app does. Unit tests could not catch the failures here, which lived in
  * how a real model actually replies rather than in any logic.
+ *
+ * Opt-in, because part of what it checks is the model's judgement rather
+ * than our code. Run three times on unchanged code it failed once and
+ * passed twice: qwen2.5-coder sometimes claims it "added a test script
+ * to the package.json", which is exactly the invention the last
+ * assertion forbids. That is worth knowing and worth checking
+ * deliberately, but a suite that fails one run in three stops being
+ * evidence of anything — real regressions would hide in the noise.
+ *
+ * Run it with PALEONYX_LIVE_MODEL_TESTS=1.
  */
-describe("live Ollama agent task", () => {
+// Declared rather than pulling in @types/node: agent-core also runs in
+// the browser, and adding Node's globals package-wide would make it easy
+// to reach for an API that is not there at runtime.
+declare const process: { env: Record<string, string | undefined> };
+
+const LIVE = process.env.PALEONYX_LIVE_MODEL_TESTS === "1";
+
+describe.skipIf(!LIVE)("live Ollama agent task", () => {
   it("investigates before answering", async () => {
     if (!(await pingOllama())) {
       console.warn("skipped: Ollama unreachable");
@@ -54,11 +71,17 @@ describe("live Ollama agent task", () => {
     console.log("=== escalation ===", result.escalation);
     console.log("=== summary ===", result.plan.summary);
 
-    // Asserts the outcome that matters, not that a tool was called:
-    // whether a model reaches for a tool is its own disposition, and
-    // this one answers from what it is given. What must hold is that it
-    // does not invent a test suite that is not in the listing.
+    // Two different kinds of check, deliberately kept apart.
+    //
+    // The pipeline held together: a real model's reply parsed into a
+    // plan without escalating. That is about our code and is why this
+    // test exists at all.
     expect(result.escalation).toBeUndefined();
+    expect(result.plan.summary).not.toBe("");
+
+    // The model behaved: it did not invent a test suite absent from the
+    // listing it was given. This one is the model's disposition, not our
+    // logic — it is the assertion that makes this run opt-in.
     const text = `${result.plan.summary} ${result.explanation}`.toLowerCase();
     expect(text).not.toMatch(/sum\.spec|sum\.test|package\.json/);
   }, 180_000);

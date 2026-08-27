@@ -43,7 +43,9 @@ import {
 import type { ContextDocument } from "@paleonyx/indexing";
 import {
   DEFAULT_BUDGET_LIMITS,
+  composeDesignRequest,
   composeProjectBrief,
+  isSelectionLocatable,
   runAgentTask,
 } from "@paleonyx/agent-core";
 import {
@@ -70,6 +72,7 @@ import type {
   BudgetUsage,
   HistoryEntry,
   ModelCatalog,
+  DesignSelection,
   PermissionMode,
   ProjectBrief,
   ProjectFile,
@@ -82,7 +85,12 @@ import { TauriFileSystem, openProject } from "./tauri-filesystem.js";
 import { openFolderDialog } from "./tauri-dialog.js";
 import { searchProject } from "./tauri-search.js";
 import { runProjectCommand } from "./tauri-exec.js";
-import { previewUrl, startPreview, stopPreview } from "./tauri-preview.js";
+import {
+  previewUrl,
+  setDesignMode,
+  startPreview,
+  stopPreview,
+} from "./tauri-preview.js";
 import { TauriSystemProfileReader } from "./tauri-system-profile.js";
 import {
   TauriChangeStore,
@@ -480,6 +488,7 @@ function Workspace({
    * reloads, and a boolean would collapse them into one.
    */
   const [previewReloads, setPreviewReloads] = useState(0);
+  const [designMode, setDesignModeOn] = useState(false);
 
   /**
    * Per project, not per user (CLAUDE.md §6): letting the agent write
@@ -704,6 +713,43 @@ function Workspace({
       void stopPreview();
     };
   }, []);
+
+  /**
+   * Design mode is a server setting, not a panel one: the selection
+   * script is added as a page is served, so the frame has to be
+   * reloaded for the change to take effect either way.
+   */
+  async function handleDesignModeChange(enabled: boolean) {
+    try {
+      await setDesignMode(enabled);
+      setDesignModeOn(enabled);
+      setPreviewReloads((count) => count + 1);
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function handleDesignChange(
+    selection: DesignSelection,
+    instruction: string
+  ) {
+    // Nothing to search for means the run would fail after spending a
+    // model call, so say so instead of starting it.
+    if (!isSelectionLocatable(selection)) {
+      setStatusMessage(null);
+      setPreviewError(
+        "That element has no id, class, or text to find it by. Try clicking the button or heading itself rather than the space around it."
+      );
+      return;
+    }
+    setPreviewError(null);
+    await runTaskWith({
+      taskType: "design-change",
+      instructions: composeDesignRequest(selection, instruction),
+      // The page is the starting point; the agent reads further itself.
+      targetFiles: [selection.page].filter(Boolean),
+    });
+  }
 
   const previewEntry = useMemo(
     () => findPreviewEntry(files.map((file) => file.path)),
@@ -1100,9 +1146,16 @@ function Workspace({
                       ? previewUrl(previewPort, previewEntry.path)
                       : null
                   }
+                  entryPath={previewEntry?.path ?? null}
                   unavailableReason={previewUnavailable}
                   error={previewError}
                   reloadToken={previewReloads}
+                  designMode={designMode}
+                  onDesignModeChange={(on) => void handleDesignModeChange(on)}
+                  onDesignChange={(selection, instruction) =>
+                    void handleDesignChange(selection, instruction)
+                  }
+                  busy={statusMessage !== null}
                 />
               </div>
             )}

@@ -439,8 +439,52 @@ user-opted-in remote providers.
      source locations and let the agent choose. No vision model and no
      instrumentation, but ambiguous when markup is generated.
 
-   These aren't mutually exclusive — the third is a plausible baseline
-   that the first refines where we have framework support. Decide before
-   building; the live-preview surface journey 14 depends on is a
-   prerequisite either way, and is worth building first regardless of
-   which hand-off wins.
+   **Decided.** Element facts plus search is the default and the only
+   one built: it needs no vision model, no framework support, and works
+   on the plain HTML the scaffolder produces. Screenshot-and-region is
+   offered as an *additional* option when the active model actually
+   reports `supportsVision` — gated on the declared capability rather
+   than on a key being present, so a local vision model qualifies and a
+   text-only remote one does not. `DesignSelection` carries `screenshot`
+   and `source` as optional fields so both remaining routes add data
+   rather than replacing the shape.
+
+   **Revisit at the end of v1: build-time source tagging.** Deferred by
+   decision, not dropped — it is the most precise of the three and the
+   only one that handles generated markup reliably, but it is
+   per-framework work that pays off only once the frameworks people
+   actually use here are known. Reassess before v1 ships: if design mode
+   is being used and search is missing elements, this is the fix.
+
+2. **Web companion transport — Cloudflare, with a local-first question
+   attached.** Cloudflare is the intended way to reach the web companion
+   (owner's call, recorded here so it is not rediscovered later). What
+   still needs deciding is what actually crosses it. The companion talks
+   to the *local* backend, so exposing it remotely means the user's code
+   and prompts leave the machine — which is the one thing §6 and
+   CLAUDE.md §4 promise they do not, and a tunnel is exactly the kind of
+   quiet second egress path CLAUDE.md §9 rules out. Three shapes worth
+   weighing before any of it is built:
+   - **Same-machine only.** The companion is served over the LAN or
+     loopback and Cloudflare hosts nothing but the static assets. No
+     project data transits anyone else. Narrowest, and preserves the
+     guarantee unchanged.
+   - **User-initiated tunnel.** A Cloudflare tunnel the user turns on
+     per session, with the same visible, revocable opt-in a BYOK key
+     gets, and a status-bar indicator for as long as it is open. Data
+     does transit Cloudflare, so this has to be a decision the user
+     makes knowingly, never a default.
+   - **Relay with end-to-end encryption.** Cloudflare carries ciphertext
+     it cannot read. Strongest guarantee, most work, and needs a key
+     exchange between desktop and phone that we would have to design.
+
+   Whichever is chosen, it is an explicit opt-in and it is labeled while
+   active — the same bar the model catalog's live refresh clears (§9
+   decision 5).
+
+3. **Publishing to GitHub.** Not yet done; the repository is local-only
+   with no remote, and the working branch is `master` while the intended
+   default is `main`. Worth doing, and two things want deciding first
+   rather than at push time: whether it is public or private, and what
+   licence it carries — there is none today, so as written nobody may
+   legally reuse it. Nothing gets pushed without the owner asking.
