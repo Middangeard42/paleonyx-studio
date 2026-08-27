@@ -259,7 +259,7 @@ describe("runAgentTask for a new project", () => {
     instructions: composeProjectBrief({
       description: "a page that tracks how much water I drink",
       audience: "",
-      platform: "web" as const,
+      platforms: ["web" as const],
       features: [],
     }),
     targetFiles: [],

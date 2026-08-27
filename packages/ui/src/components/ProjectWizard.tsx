@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Plus, X } from "lucide-react";
 import type { ProjectBrief, ProjectPlatform } from "@paleonyx/shared-types";
 import {
   EMPTY_PROJECT_BRIEF,
+  EXCLUSIVE_PLATFORM,
   PROJECT_PLATFORM_LABELS,
 } from "@paleonyx/shared-types";
 import { Button } from "../primitives/Button.js";
@@ -10,10 +11,24 @@ import { Button } from "../primitives/Button.js";
 const PLATFORM_ORDER: ProjectPlatform[] = [
   "web",
   "desktop",
-  "mobile",
+  "android",
+  "ios",
   "command-line",
   "undecided",
 ];
+
+/**
+ * Picking a target toggles it, except "Not sure yet", which cannot
+ * coexist with a specific answer in either direction.
+ */
+function togglePlatform(
+  current: readonly ProjectPlatform[],
+  platform: ProjectPlatform
+): ProjectPlatform[] {
+  if (current.includes(platform)) return current.filter((p) => p !== platform);
+  if (platform === EXCLUSIVE_PLATFORM) return [platform];
+  return [...current.filter((p) => p !== EXCLUSIVE_PLATFORM), platform];
+}
 
 export interface ProjectWizardProps {
   /** The folder the project will be created in, shown so it's not a surprise. */
@@ -90,17 +105,22 @@ export function ProjectWizard({
           />
         </Field>
 
-        <Field label="Where should people use it?">
+        <FieldGroup
+          label="Where should people use it?"
+          hint="Pick as many as apply. Choosing more than one asks for a single thing that covers them all."
+        >
           <div className="flex flex-wrap gap-1.5">
             {PLATFORM_ORDER.map((platform) => {
-              const active = brief.platform === platform;
+              const active = brief.platforms.includes(platform);
               return (
                 <button
                   key={platform}
                   type="button"
-                  role="radio"
+                  role="checkbox"
                   aria-checked={active}
-                  onClick={() => update("platform", platform)}
+                  onClick={() =>
+                    update("platforms", togglePlatform(brief.platforms, platform))
+                  }
                   className={`rounded-md border px-2.5 py-1.5 text-xs transition-colors duration-micro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                     active
                       ? "border-accent bg-accent-muted text-text-primary"
@@ -112,14 +132,14 @@ export function ProjectWizard({
               );
             })}
           </div>
-        </Field>
+        </FieldGroup>
 
-        <Field
+        <FieldGroup
           label="What must it be able to do?"
           hint="Optional — a few things it needs to do, one per line."
         >
           <FeatureList items={features} onChange={setFeatures} />
-        </Field>
+        </FieldGroup>
 
         <div className="flex items-center justify-between gap-2 border-t border-border-subtle pt-4">
           <Button variant="ghost" onClick={onCancel} disabled={busy}>
@@ -137,6 +157,7 @@ export function ProjectWizard({
 const FIELD_CLASS =
   "w-full resize-y rounded-md border border-border-subtle bg-surface-2 p-2 text-sm text-text-primary placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
+/** A question answered by exactly one control. */
 function Field({
   label,
   hint,
@@ -152,6 +173,37 @@ function Field({
       {hint && <span className="text-xs text-text-tertiary">{hint}</span>}
       {children}
     </label>
+  );
+}
+
+/**
+ * A question answered by several controls.
+ *
+ * These cannot share the `Field` above: a `<label>` binds to its first
+ * labelable descendant, so wrapping the six platform chips in one made
+ * the question itself a control — clicking the words "Where should
+ * people use it?" silently selected "Web browser". Labelling by
+ * reference instead also gets a screen reader to announce the set as a
+ * group rather than reading the whole question into every chip's name.
+ */
+function FieldGroup({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  const id = useId();
+  return (
+    <div role="group" aria-labelledby={id} className="flex flex-col gap-1.5">
+      <span id={id} className="text-sm text-text-primary">
+        {label}
+      </span>
+      {hint && <span className="text-xs text-text-tertiary">{hint}</span>}
+      {children}
+    </div>
   );
 }
 

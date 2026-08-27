@@ -13,8 +13,14 @@ export interface ProjectBrief {
   description: string;
   /** Who it is for, in the user's own words. */
   audience: string;
-  /** Where it should run. `undecided` is an honest, supported answer. */
-  platform: ProjectPlatform;
+  /**
+   * Where it should run. A list because the honest answer is often more
+   * than one — "Android and iPhone" is a different instruction from
+   * either alone, since covering both is what makes a web page the
+   * sensible first version rather than a compromise. Empty means the
+   * question went unanswered, which is treated the same as `undecided`.
+   */
+  platforms: ProjectPlatform[];
   /** Things it must do. Blank entries are dropped, not rendered empty. */
   features: string[];
 }
@@ -22,26 +28,36 @@ export interface ProjectBrief {
 export type ProjectPlatform =
   | "web"
   | "desktop"
-  | "mobile"
+  | "android"
+  | "ios"
   | "command-line"
+  /** An explicit "I don't know", which is a real answer, not a gap. */
   | "undecided";
 
 /**
- * Labels are the wizard's question copy, not enum names — "where will
- * people use this?" is answerable by someone who has never heard the
- * word "platform".
+ * Chip labels for the wizard. Short noun phrases rather than sentences,
+ * so a row of them scans — and named the way the user would name them
+ * ("Android", "iOS"), not by any internal grouping.
  */
 export const PROJECT_PLATFORM_LABELS: Record<ProjectPlatform, string> = {
-  web: "In a web browser",
-  desktop: "As a desktop app",
-  mobile: "On a phone",
-  "command-line": "In a terminal",
+  web: "Web browser",
+  desktop: "Desktop app",
+  android: "Android",
+  ios: "iOS",
+  "command-line": "Terminal",
   undecided: "Not sure yet",
 };
+
+/**
+ * Answering "not sure" alongside four specific targets is contradictory,
+ * so the wizard clears the rest when it is picked and clears it when
+ * anything else is.
+ */
+export const EXCLUSIVE_PLATFORM: ProjectPlatform = "undecided";
 
 export const EMPTY_PROJECT_BRIEF: ProjectBrief = {
   description: "",
   audience: "",
-  platform: "undecided",
+  platforms: [],
   features: [],
 };
