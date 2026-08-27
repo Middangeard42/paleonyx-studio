@@ -109,8 +109,18 @@ what's excluded is building a full teaching-curriculum product around them.
    "likely too large"). "Likely too large" entries start collapsed behind
    a "Show N too-large models" toggle (off by default) so the default
    view stays realistic without hiding anything permanently. Installing a
-   model and switching to it flows through the same unified runtime
-   interface without workflow changes elsewhere in the app.
+   model, removing one, and switching between them all happen in the app,
+   through the same unified runtime interface and without workflow
+   changes elsewhere. Installing is a multi-gigabyte download, so it
+   reports real progress, can be cancelled, and survives navigating away
+   from the panel. Removing one is destructive and is confirmed, and
+   never silently removes the model currently in use.
+
+   Not every provider can do this — Ollama exposes an API for it, others
+   may not — so it is declared adapter capability, not something
+   attempted and discovered to fail (CLAUDE.md §4). Where a provider
+   cannot install, the app says so and shows what to run instead, rather
+   than offering a button that does nothing.
 
 10. **Bring your own API key for a cloud model.** From the same Models
     settings screen, the user adds an API key for a supported provider —
@@ -482,9 +492,31 @@ user-opted-in remote providers.
    active — the same bar the model catalog's live refresh clears (§9
    decision 5).
 
-3. **Publishing to GitHub.** Not yet done; the repository is local-only
-   with no remote, and the working branch is `master` while the intended
-   default is `main`. Worth doing, and two things want deciding first
-   rather than at push time: whether it is public or private, and what
-   licence it carries — there is none today, so as written nobody may
-   legally reuse it. Nothing gets pushed without the owner asking.
+3. **Publishing to GitHub — open source, with donations.** The owner's
+   direction is an open-source project that accepts donations as thanks.
+   Donations are independent of the licence: every mainstream open-source
+   licence permits them, and the funding platforms (GitHub Sponsors,
+   Ko-fi, Open Collective) work with any of them, so that half needs no
+   decision here.
+
+   The licence itself is still open, and it is the one choice that is
+   awkward to revisit once contributors have committed under it:
+   - **Permissive (MIT, Apache-2.0).** Widest adoption and the easiest
+     for anyone to build on. Apache-2.0 adds an explicit patent grant
+     that MIT lacks. The trade-off is that a company may ship a closed
+     commercial fork of this and owe nothing.
+   - **Copyleft (GPL-3.0, AGPL-3.0).** A fork that is distributed has to
+     stay open. AGPL extends that to hosted use, which matters here only
+     if the web companion is ever offered as a service.
+
+   No dependency forces the choice — Tauri, Monaco, and the Rust crates
+   in use are all MIT/Apache-2.0, so any of the above is available. This
+   is a judgement about what the project is for, not a legal question
+   with one right answer, and it is worth taking properly rather than
+   defaulting into.
+
+   Mechanics still outstanding: there is no remote, the working branch is
+   `master` while the intended default is `main`, and there is no LICENSE
+   file yet — until there is one, the default is exclusive copyright and
+   nobody may legally reuse it, which is the opposite of the intent.
+   Nothing gets pushed without the owner asking.

@@ -12,3 +12,17 @@ export {
   BUNDLED_CATALOG_ENTRIES,
   BUNDLED_CATALOG_RETRIEVED_AT,
 } from "./catalog/bundled-catalog.js";
+export {
+  OllamaModelInstaller,
+  installerFor,
+} from "./catalog/model-installer.js";
+export type {
+  ModelInstaller,
+  InstallOptions,
+} from "./catalog/model-installer.js";
+export {
+  NdjsonBuffer,
+  PullProgressTracker,
+  formatBytes,
+} from "./catalog/pull-progress.js";
+export type { ModelPullProgress } from "./catalog/pull-progress.js";
