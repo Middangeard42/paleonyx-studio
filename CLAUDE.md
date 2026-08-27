@@ -236,6 +236,29 @@ Rules for this structure:
   copy, not hardcoded into `runtime` — the adapter shouldn't need to
   change if the instructions get clearer).
 
+### 4.3 The Preview Server
+
+- Previewing the user's project needs the shell to *serve* files, which
+  is the one inbound network surface in the app. It is not covered by
+  the egress rule in §4 — nothing leaves the machine — but it is a
+  listening socket, so its properties are fixed rather than incidental:
+  bound to `127.0.0.1` and never a routable address; `GET`/`HEAD` only,
+  so it can never become a second write path; and every request resolved
+  through the same `resolve_within_root` the file commands use, so it
+  cannot be walked out of the opened project. Those properties have
+  tests in `preview.rs`, and the traversal one is verified by confirming
+  a file outside the project leaks when the guard is removed.
+- It starts only when the user opens the panel, and is not a general
+  static server: no directory listings, no upload, no configuration.
+- *What* to preview is decided in TypeScript (`findPreviewEntry`), not
+  in the server, for the same reason the command allowlist lives in
+  `agent-core` — the shell is mechanism, and judgement belongs where it
+  can be read and tested.
+- Previewed pages run in a sandboxed frame without `allow-same-origin`.
+  The project being previewed is often code a model proposed and the
+  user has not read closely; it must not be able to reach the app's own
+  origin.
+
 ---
 
 ## 5. Skill-Level Adaptation

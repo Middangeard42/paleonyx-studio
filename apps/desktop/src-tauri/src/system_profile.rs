@@ -97,11 +97,9 @@ fn detect_gpu() -> Option<GpuInfoDto> {
             // Prefer the adapter with the most dedicated memory: on
             // laptops the integrated adapter usually enumerates first,
             // but the discrete one is what actually matters here.
-            let is_better = best
-                .as_ref()
-                .is_none_or(|current| {
-                    candidate.vram_bytes.unwrap_or(0) > current.vram_bytes.unwrap_or(0)
-                });
+            let is_better = best.as_ref().is_none_or(|current| {
+                candidate.vram_bytes.unwrap_or(0) > current.vram_bytes.unwrap_or(0)
+            });
             if is_better {
                 best = Some(candidate);
             }

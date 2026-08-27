@@ -327,7 +327,8 @@ files through the same plan/diff/apply/undo path every other change uses.
 Without it "New to coding" is a skill level with no way in.
 
 **Later (v2+, not committed scope)**
-Design mode and the live-preview surface it needs (§3 journey 14, §10);
+Design mode (§3 journey 14, §10) — the live-preview surface it depends on
+is built, so what remains is the hand-off method §10 is still open on;
 native mobile editing clients; live multiplayer collaboration; plugin
 marketplace; enterprise governance console; expanded skill-sharing/
 community templates; broader remote/cloud model options beyond

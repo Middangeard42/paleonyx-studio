@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Boxes, Files, FolderOpen, Search, Sparkles } from "lucide-react";
+import { Boxes, Files, FolderOpen, MonitorPlay, Search, Sparkles } from "lucide-react";
 import {
   ActivityBar,
   AgentPanel,
   Button,
   FileTree,
+  IconButton,
   BYOK_PROVIDERS,
   ByokSection,
   ModelCatalogView,
   OnboardingFlow,
   Panel,
+  PreviewPanel,
   ProjectWizard,
   SearchPanel,
   StatusBar,
@@ -32,7 +34,12 @@ import {
   refreshAfterWrite,
 } from "./workspace-files.js";
 import { CodeEditor } from "@paleonyx/editor";
-import { findContextDocuments, listProjectFiles } from "@paleonyx/indexing";
+import {
+  describeMissingEntry,
+  findContextDocuments,
+  findPreviewEntry,
+  listProjectFiles,
+} from "@paleonyx/indexing";
 import type { ContextDocument } from "@paleonyx/indexing";
 import {
   DEFAULT_BUDGET_LIMITS,
@@ -75,6 +82,7 @@ import { TauriFileSystem, openProject } from "./tauri-filesystem.js";
 import { openFolderDialog } from "./tauri-dialog.js";
 import { searchProject } from "./tauri-search.js";
 import { runProjectCommand } from "./tauri-exec.js";
+import { previewUrl, startPreview, stopPreview } from "./tauri-preview.js";
 import { TauriSystemProfileReader } from "./tauri-system-profile.js";
 import {
   TauriChangeStore,
@@ -464,6 +472,15 @@ function Workspace({
   const [activePanel, setActivePanel] = useState("files");
   const [providerResolved, setProviderResolved] = useState(false);
 
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewPort, setPreviewPort] = useState<number | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  /**
+   * Counter, not a flag: two writes in a row have to produce two
+   * reloads, and a boolean would collapse them into one.
+   */
+  const [previewReloads, setPreviewReloads] = useState(0);
+
   /**
    * Per project, not per user (CLAUDE.md §6): letting the agent write
    * freely in a scratch repo says nothing about wanting that in
@@ -659,6 +676,49 @@ function Workspace({
    * touched — destroying work while running the code that exists to
    * protect it.
    */
+  // Starts the local server the first time the panel is opened. Nothing
+  // is served until the user asks for it — an idle listener on a
+  // project they are only reading would be a surface with no purpose.
+  useEffect(() => {
+    if (!previewOpen) return;
+    let cancelled = false;
+    setPreviewError(null);
+    startPreview()
+      .then((info) => {
+        if (!cancelled) setPreviewPort(info.port);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setPreviewError(err instanceof Error ? err.message : String(err));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [previewOpen]);
+
+  // The server outlives the panel being closed, so it is stopped when
+  // the workspace goes away rather than on every toggle.
+  useEffect(() => {
+    return () => {
+      void stopPreview();
+    };
+  }, []);
+
+  const previewEntry = useMemo(
+    () => findPreviewEntry(files.map((file) => file.path)),
+    [files]
+  );
+
+  /**
+   * Having no page to show and failing to serve one are different
+   * states and read differently (DESIGN.md §5) — one is "this kind of
+   * project has nothing to display", the other is "something broke".
+   */
+  const previewUnavailable = previewEntry
+    ? null
+    : describeMissingEntry(files.map((file) => file.path));
+
   async function reloadChangedFiles(changedPaths: string[]) {
     const refreshed: Record<string, string> = {};
     for (const path of changedPaths) {
@@ -666,6 +726,7 @@ function Workspace({
       refreshed[path] = await fs.readFile(path);
     }
     setWorkspace((prev) => refreshAfterWrite(prev, refreshed));
+    setPreviewReloads((count) => count + 1);
   }
 
   function handleEditorChange(path: string, next: string) {
@@ -700,6 +761,7 @@ function Workspace({
       if (content === undefined) return;
       await saveUserEdits(new Map([[path, content]]));
       setWorkspace((prev) => markSaved(prev, path));
+      setPreviewReloads((count) => count + 1);
     },
     [fileContents]
   );
@@ -982,6 +1044,16 @@ function Workspace({
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-center justify-end border-b border-border-subtle px-2 py-1">
+            <IconButton
+              icon={<MonitorPlay size={14} />}
+              label={previewOpen ? "Hide preview" : "Show preview"}
+              active={previewOpen}
+              onClick={() => setPreviewOpen((open) => !open)}
+            />
+          </div>
+          <div className="flex min-h-0 flex-1">
+            <div className="flex min-w-0 flex-1 flex-col">
           {!activeTab || openPaths.length === 0 ? (
             <div className="flex flex-1 items-center justify-center text-sm text-text-tertiary">
               Select a file from the tree to open it.
@@ -1010,6 +1082,31 @@ function Workspace({
               ))}
             </Tabs>
           )}
+            </div>
+            {previewOpen && (
+              // Beside the editor rather than in a tab: seeing the change
+              // and the result at once is the whole point, and a tab
+              // would make them alternatives. Given the full width when
+              // no file is open, which is the state a freshly scaffolded
+              // project starts in.
+              <div
+                className={`min-w-0 border-l border-border-subtle ${
+                  openPaths.length === 0 ? "flex-1" : "w-[30rem] shrink-0"
+                }`}
+              >
+                <PreviewPanel
+                  url={
+                    previewPort && previewEntry
+                      ? previewUrl(previewPort, previewEntry.path)
+                      : null
+                  }
+                  unavailableReason={previewUnavailable}
+                  error={previewError}
+                  reloadToken={previewReloads}
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex h-full w-96 shrink-0 flex-col gap-3 overflow-auto border-l border-border-subtle p-3">

@@ -58,3 +58,21 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Never mention the developer");
   });
 });
+
+describe("buildSystemPrompt for a new project", () => {
+  // The first scaffold run produced index.html loading `src/sum.ts` and
+  // `src/greet.ts` through plain <script src> tags. A browser cannot run
+  // TypeScript, so the page failed on load — and nothing said otherwise,
+  // because the instructions asked for the fewest dependencies without
+  // saying what "runs in a browser" actually requires.
+  it("rules out TypeScript where there is no build step to compile it", () => {
+    const prompt = buildSystemPrompt("scaffold", "new-to-coding");
+    expect(prompt).toMatch(/cannot execute TypeScript/i);
+    expect(prompt).toMatch(/build step/i);
+  });
+
+  it("requires the result to run as delivered", () => {
+    const prompt = buildSystemPrompt("scaffold", "new-to-coding");
+    expect(prompt).toMatch(/run as delivered/i);
+  });
+});

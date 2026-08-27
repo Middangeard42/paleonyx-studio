@@ -4,16 +4,19 @@
 mod commands;
 mod exec;
 mod git;
+mod preview;
 mod search;
 mod secrets;
 mod system_profile;
 
 use commands::ProjectState;
+use preview::PreviewState;
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(ProjectState::default())
+        .manage(PreviewState::default())
         .invoke_handler(tauri::generate_handler![
             commands::open_project,
             commands::list_project_files,
@@ -29,6 +32,8 @@ fn main() {
             secrets::has_provider_key,
             secrets::get_provider_key,
             secrets::delete_provider_key,
+            preview::start_preview,
+            preview::stop_preview,
             search::search_project,
             exec::run_command
         ])

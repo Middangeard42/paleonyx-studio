@@ -79,7 +79,10 @@ fn git_with_stdin(root: &Path, args: &[&str], input: &str) -> Result<String, Str
 
 fn project_root(state: &tauri::State<ProjectState>) -> Result<std::path::PathBuf, String> {
     let guard = state.root.lock().map_err(|e| e.to_string())?;
-    guard.as_ref().cloned().ok_or("No project is open.".to_string())
+    guard
+        .as_ref()
+        .cloned()
+        .ok_or("No project is open.".to_string())
 }
 
 #[tauri::command]
@@ -89,8 +92,7 @@ pub fn git_status(state: tauri::State<ProjectState>) -> Result<GitStatusDto, Str
         .map(|out| out == "true")
         .unwrap_or(false);
 
-    let has_commits =
-        is_repository && git(&root, &["rev-parse", "--verify", "HEAD"]).is_ok();
+    let has_commits = is_repository && git(&root, &["rev-parse", "--verify", "HEAD"]).is_ok();
 
     Ok(GitStatusDto {
         is_repository,
@@ -228,7 +230,10 @@ pub fn list_agent_changes(state: tauri::State<ProjectState>) -> Result<Vec<Strin
     let revisions = git(&root, &["rev-list", HISTORY_REF])?;
     let mut records = Vec::new();
     for revision in revisions.lines() {
-        let record = git(&root, &["cat-file", "-p", &format!("{revision}:{RECORD_BLOB_NAME}")])?;
+        let record = git(
+            &root,
+            &["cat-file", "-p", &format!("{revision}:{RECORD_BLOB_NAME}")],
+        )?;
         records.push(record);
     }
     Ok(records)

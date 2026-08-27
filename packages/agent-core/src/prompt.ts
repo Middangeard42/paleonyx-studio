@@ -72,6 +72,8 @@ const SCAFFOLD_INSTRUCTIONS = [
   "Aim for the smallest thing that actually runs — usually three to eight files. A running skeleton the user can open and see working beats a fuller structure that does not start.",
   "Among the ways of building what was asked for, take the one with the fewest moving parts and the least to install. Do not add a dependency the project can do without. This chooses between approaches that meet the stated target — it is not a reason to build something else.",
   "If you cannot build what was asked for, or judge that a different form is the better first version, say so in the first sentence of `explanation` and say why. Never substitute silently.",
+  "Anything that runs in a browser with no build step must be plain JavaScript. A browser cannot execute TypeScript: `<script src=\"app.ts\">` fails to load, and type annotations or `export` in a classic script are syntax errors. Use `.js` files, and `<script type=\"module\">` if you want imports. Only write TypeScript when the project actually has a build step, and then include it.",
+  "The result must run as delivered. Do not reference a file, script, or command the project does not contain.",
   "Include a README.md giving, in plain language, the exact steps to run it. Assume the reader has never run a project before.",
   "Every file is new, so every hunk is all `add` lines.",
 ].join(" ");
