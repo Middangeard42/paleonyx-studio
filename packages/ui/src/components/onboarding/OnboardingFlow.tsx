@@ -9,6 +9,7 @@ import { SKILL_LEVEL_DESCRIPTORS } from "@paleonyx/shared-types";
 import { Button } from "../../primitives/Button.js";
 import { ByokSection } from "../ByokSection.js";
 import { ModelCatalogView } from "../ModelCatalogView.js";
+import type { ModelManagement } from "../ModelCatalogView.js";
 import { SkillLevelCards } from "./SkillLevelCards.js";
 
 const STEPS = ["welcome", "skill", "models", "ready"] as const;
@@ -31,6 +32,8 @@ export interface OnboardingFlowProps {
   selectedModelId: string | null;
   onSelectModel: (entry: ModelCatalogEntry) => void;
   onComplete: () => void;
+  /** Lets a first-time user download the model they just picked. */
+  management?: ModelManagement;
   /** Omitted where credential storage doesn't exist (see ByokSection). */
   byok?: {
     keyedProviderIds: readonly string[];
@@ -101,6 +104,7 @@ export function OnboardingFlow(props: OnboardingFlowProps) {
                   onShowTooLargeChange={props.onShowTooLargeChange}
                   selectedModelId={props.selectedModelId}
                   onSelectModel={props.onSelectModel}
+                  management={props.management}
                 />
                 <ByokSection
                   keyedProviderIds={props.byok?.keyedProviderIds ?? []}
@@ -115,6 +119,7 @@ export function OnboardingFlow(props: OnboardingFlowProps) {
                 skillLevel={props.skillLevel}
                 selectedModelId={props.selectedModelId}
                 catalog={props.catalog}
+                canManage={props.management !== undefined}
               />
             )}
           </div>
@@ -179,6 +184,7 @@ function ModelStep({
   onShowTooLargeChange,
   selectedModelId,
   onSelectModel,
+  management,
 }: {
   catalog: ModelCatalog | null;
   profile: SystemProfile | undefined;
@@ -186,6 +192,7 @@ function ModelStep({
   onShowTooLargeChange: (show: boolean) => void;
   selectedModelId: string | null;
   onSelectModel: (entry: ModelCatalogEntry) => void;
+  management?: ModelManagement;
 }) {
   if (!catalog) {
     return <p className="text-sm text-text-tertiary">Loading model catalog…</p>;
@@ -198,6 +205,7 @@ function ModelStep({
       onShowTooLargeChange={onShowTooLargeChange}
       activeModelId={selectedModelId ?? undefined}
       onSelect={onSelectModel}
+      management={management}
     />
   );
 }
@@ -206,10 +214,12 @@ function ReadyStep({
   skillLevel,
   selectedModelId,
   catalog,
+  canManage,
 }: {
   skillLevel: SkillLevel;
   selectedModelId: string | null;
   catalog: ModelCatalog | null;
+  canManage: boolean;
 }) {
   const descriptor = SKILL_LEVEL_DESCRIPTORS.find((d) => d.level === skillLevel);
   const model = catalog?.entries.find((entry) => entry.id === selectedModelId);
@@ -232,11 +242,9 @@ function ReadyStep({
         </dd>
         {model && !installed && (
           <dd className="mt-1 text-xs text-text-secondary">
-            Not downloaded yet. Run{" "}
-            <code className="rounded bg-surface-2 px-1 py-0.5 font-mono">
-              ollama pull {model.id}
-            </code>{" "}
-            to fetch it.
+            {canManage
+              ? "Not downloaded yet — go back a step to download it, or do it later from Settings."
+              : "Not downloaded yet. Paleonyx can't fetch this one for you, so it has to be installed through your runtime first."}
           </dd>
         )}
       </div>

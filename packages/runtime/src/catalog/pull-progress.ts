@@ -12,15 +12,9 @@
  *    bar leap backwards several times during one download.
  */
 
-/** One update, normalized into something a progress bar can use. */
-export interface ModelPullProgress {
-  /** Ollama's own words for what is happening, e.g. "pulling manifest". */
-  status: string;
-  /** 0–1 across the whole download, or null before any size is known. */
-  fraction: number | null;
-  completedBytes: number | null;
-  totalBytes: number | null;
-}
+export type { ModelPullProgress } from "@paleonyx/shared-types";
+export { formatBytes } from "@paleonyx/shared-types";
+import type { ModelPullProgress } from "@paleonyx/shared-types";
 
 /** One raw object from the stream. */
 export interface RawPullUpdate {
@@ -117,21 +111,4 @@ export class PullProgressTracker {
       totalBytes,
     };
   }
-}
-
-/**
- * A size a person can read. Used in the panel's progress line, kept here
- * so the units match everywhere they are shown.
- */
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  // One decimal below 10, none above, where it stops carrying meaning.
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`;
 }

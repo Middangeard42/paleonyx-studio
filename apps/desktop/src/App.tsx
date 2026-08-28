@@ -53,10 +53,12 @@ import {
   OllamaAdapter,
   OpenAiCompatibleAdapter,
   demoRespond,
+  installerFor,
   loadModelCatalog,
   pingOllama,
 } from "@paleonyx/runtime";
 import type { ChatModelProvider } from "@paleonyx/runtime";
+import type { ModelManagement } from "@paleonyx/ui";
 import {
   DEFAULT_PERMISSION_MODE,
   DEFAULT_SKILL_LEVEL,
@@ -72,6 +74,8 @@ import type {
   BudgetUsage,
   HistoryEntry,
   ModelCatalog,
+  ModelCatalogEntry,
+  ModelPullProgress,
   DesignSelection,
   PermissionMode,
   ProjectBrief,
@@ -182,6 +186,78 @@ export function App() {
     setCatalog(await loadModelCatalog());
   }, []);
 
+  /**
+   * Downloading and removing models, held here rather than in the panel.
+   *
+   * A pull is multi-gigabyte and takes minutes; if this state lived in
+   * the catalog component it would be torn down the moment the user
+   * switched panels, and the progress callbacks would be writing to an
+   * unmounted tree. Onboarding shows the same screen, so this also makes
+   * the download available at the moment a beginner first picks a model
+   * — which is exactly where "run this in a terminal" was worst.
+   */
+  const [installingId, setInstallingId] = useState<string | null>(null);
+  const [installProgress, setInstallProgress] = useState<ModelPullProgress | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [manageError, setManageError] = useState<string | null>(null);
+  const [ollamaReachable, setOllamaReachable] = useState(false);
+  const installAbort = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    void pingOllama().then(setOllamaReachable);
+  }, [catalog]);
+
+  const handleInstallModel = useCallback(
+    async (entry: ModelCatalogEntry) => {
+      const installer = installerFor("ollama");
+      if (!installer) return;
+      const abort = new AbortController();
+      installAbort.current = abort;
+      setManageError(null);
+      setInstallProgress(null);
+      setInstallingId(entry.id);
+      try {
+        await installer.install(entry.id, {
+          signal: abort.signal,
+          onProgress: setInstallProgress,
+        });
+        await refreshCatalog();
+      } catch (err) {
+        // Cancelling is something the user did, not a failure to report
+        // back to them as one.
+        if (!abort.signal.aborted) {
+          setManageError(err instanceof Error ? err.message : String(err));
+        }
+      } finally {
+        installAbort.current = null;
+        setInstallingId(null);
+        setInstallProgress(null);
+      }
+    },
+    [refreshCatalog]
+  );
+
+  const handleUninstallModel = useCallback(
+    async (entry: ModelCatalogEntry) => {
+      const installer = installerFor("ollama");
+      if (!installer) return;
+      setManageError(null);
+      setRemovingId(entry.id);
+      try {
+        await installer.uninstall(entry.id);
+        // Selecting a model that is no longer installed would leave the
+        // app pointing at nothing, so the choice is cleared with it.
+        if (selectedModelId === entry.id) setSelectedModelId(null);
+        await refreshCatalog();
+      } catch (err) {
+        setManageError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setRemovingId(null);
+      }
+    },
+    [refreshCatalog, selectedModelId, setSelectedModelId]
+  );
+
   // Whenever the choice changes — which is exactly when someone has just
   // installed something and picked it.
   useEffect(() => {
@@ -213,6 +289,20 @@ export function App() {
     onAddKey: handleAddKey,
     onRemoveKey: handleRemoveKey,
     refreshCatalog,
+    // Absent when Ollama is not running: there is nothing to install
+    // into, so the buttons are not rendered rather than rendered and
+    // failing when pressed.
+    management: ollamaReachable
+      ? {
+          installingId,
+          progress: installProgress,
+          removingId,
+          error: manageError,
+          onInstall: (entry: ModelCatalogEntry) => void handleInstallModel(entry),
+          onCancelInstall: () => installAbort.current?.abort(),
+          onUninstall: (entry: ModelCatalogEntry) => void handleUninstallModel(entry),
+        }
+      : undefined,
   };
 
   return (
@@ -229,6 +319,7 @@ export function App() {
             selectedModelId={selectedModelId}
             onSelectModel={(entry) => setSelectedModelId(entry.id)}
             onComplete={() => setOnboarded(true)}
+            management={models.management}
             byok={{
               keyedProviderIds,
               onAddKey: handleAddKey,
@@ -318,6 +409,7 @@ interface ModelsState {
   onAddKey: (providerId: string, key: string) => Promise<void>;
   onRemoveKey: (providerId: string) => Promise<void>;
   refreshCatalog: () => Promise<void>;
+  management: ModelManagement | undefined;
 }
 
 function OpenProjectScreen({
@@ -450,6 +542,7 @@ function Workspace({
     onAddKey: handleAddKey,
     onRemoveKey: handleRemoveKey,
     refreshCatalog,
+    management,
   } = models;
 
   const [files, setFiles] = useState<ProjectFile[]>([]);
@@ -1049,6 +1142,7 @@ function Workspace({
                     activeModelId={selectedModelId ?? undefined}
                     onSelect={(entry) => setSelectedModelId(entry.id)}
                     onRefresh={refreshCatalog}
+                    management={management}
                   />
                   <ByokSection
                     keyedProviderIds={keyedProviderIds}

@@ -1,16 +1,19 @@
-import { useMemo } from "react";
-import { Check, ChevronDown, RefreshCw } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Check, ChevronDown, Download, RefreshCw, Trash2, X } from "lucide-react";
 import clsx from "clsx";
 import type {
   HardwareFit,
   ModelCatalog,
   ModelCatalogEntry,
+  ModelPullProgress,
   SystemProfile,
 } from "@paleonyx/shared-types";
+import { formatBytes } from "@paleonyx/shared-types";
 import { assessFit } from "@paleonyx/system-profile";
 import { StatusBadge } from "../primitives/StatusBadge.js";
 import type { StatusTone } from "../primitives/StatusBadge.js";
 import { SystemProfileSummary } from "./SystemProfileSummary.js";
+import { Button } from "../primitives/Button.js";
 
 const FIT_TONE: Record<HardwareFit, StatusTone> = {
   "fits-comfortably": "success",
@@ -47,6 +50,25 @@ export interface ModelCatalogViewProps {
    * is no local runtime to ask.
    */
   onRefresh?: () => void | Promise<void>;
+  /**
+   * Omitted when the active provider cannot manage models — a remote
+   * provider has nothing to install, and not every local one exposes an
+   * API for it. Absent means the buttons are not rendered at all, rather
+   * than rendered and failing when pressed (CLAUDE.md §4).
+   */
+  management?: ModelManagement;
+}
+
+export interface ModelManagement {
+  /** The model being downloaded right now, if any. */
+  installingId: string | null;
+  progress: ModelPullProgress | null;
+  /** The model being removed right now, if any. */
+  removingId: string | null;
+  error: string | null;
+  onInstall: (entry: ModelCatalogEntry) => void;
+  onCancelInstall: () => void;
+  onUninstall: (entry: ModelCatalogEntry) => void;
 }
 
 /**
@@ -65,6 +87,7 @@ export function ModelCatalogView({
   activeModelId,
   onSelect,
   onRefresh,
+  management,
 }: ModelCatalogViewProps) {
   const assessed = useMemo(() => {
     return catalog.entries
@@ -114,28 +137,40 @@ export function ModelCatalogView({
         </span>
       </div>
 
-      {activeNeedsDownload && (
+      {activeNeedsDownload && !management && (
         <p className="rounded-md border border-status-info/30 bg-status-info/10 p-2.5 text-xs text-text-secondary">
           {activeEntry.label} isn&apos;t downloaded yet. Run{" "}
           <code className="rounded bg-surface-3 px-1 py-0.5 font-mono text-text-primary">
             ollama pull {activeEntry.id}
           </code>{" "}
-          to fetch it — Paleonyx can&apos;t start a download for you yet.
+          to fetch it — this provider can&apos;t be managed from here.
+        </p>
+      )}
+
+      {management?.error && (
+        <p className="rounded-md border border-status-danger/40 bg-status-danger/10 p-2.5 text-xs text-status-danger">
+          {management.error}
         </p>
       )}
 
       <ul className="flex flex-col gap-1.5">
         {visible.map(({ entry, assessment }) => (
-          <li key={entry.id}>
+          <li
+            key={entry.id}
+            className={clsx(
+              "overflow-hidden rounded-md border transition-colors duration-micro",
+              entry.id === activeModelId
+                ? "border-accent bg-accent-muted"
+                : "border-border-subtle bg-surface-2"
+            )}
+          >
             <button
               type="button"
               onClick={() => onSelect(entry)}
               className={clsx(
-                "flex w-full flex-col gap-1 rounded-md border p-2.5 text-left transition-colors duration-micro",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                entry.id === activeModelId
-                  ? "border-accent bg-accent-muted"
-                  : "border-border-subtle bg-surface-2 hover:bg-surface-3"
+                "flex w-full flex-col gap-1 p-2.5 text-left",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+                entry.id !== activeModelId && "hover:bg-surface-3"
               )}
             >
               <div className="flex items-start justify-between gap-2">
@@ -173,6 +208,14 @@ export function ModelCatalogView({
                 {assessment && ` · ${assessment.rationale}`}
               </p>
             </button>
+            {management && (
+              <ModelActions
+                entry={entry}
+                installed={installed.has(entry.id)}
+                inUse={entry.id === activeModelId}
+                management={management}
+              />
+            )}
           </li>
         ))}
       </ul>
@@ -199,4 +242,133 @@ export function ModelCatalogView({
 
 function formatContext(tokens: number): string {
   return tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : `${tokens}`;
+}
+
+/**
+ * Install / remove controls for one catalog row.
+ *
+ * A sibling of the row's selection button rather than a child of it:
+ * nesting a button inside a button is invalid HTML, and React warns
+ * about it — a mistake this project has already made once.
+ */
+function ModelActions({
+  entry,
+  installed,
+  inUse,
+  management,
+}: {
+  entry: ModelCatalogEntry;
+  installed: boolean;
+  inUse: boolean;
+  management: ModelManagement;
+}) {
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const installing = management.installingId === entry.id;
+  const removing = management.removingId === entry.id;
+  // One download at a time: two multi-gigabyte pulls at once help nobody
+  // and make the progress line ambiguous.
+  const otherBusy =
+    (management.installingId !== null && !installing) ||
+    (management.removingId !== null && !removing);
+
+  if (installing) {
+    return (
+      <div className="flex items-center gap-2 border-t border-border-subtle px-2.5 py-1.5">
+        <ProgressBar progress={management.progress} />
+        <button
+          type="button"
+          onClick={management.onCancelInstall}
+          aria-label={`Cancel downloading ${entry.label}`}
+          className="rounded p-1 text-text-tertiary hover:bg-surface-3 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <X size={13} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 border-t border-border-subtle px-2.5 py-1.5">
+      {!installed ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={otherBusy}
+          onClick={() => management.onInstall(entry)}
+        >
+          <Download size={12} />
+          Download
+        </Button>
+      ) : confirmingRemove ? (
+        <>
+          <span className="mr-auto text-xs text-text-secondary">
+            {inUse
+              ? "This is the model in use. Remove it anyway?"
+              : `Remove ${entry.label}?`}
+          </span>
+          <Button
+            variant="danger"
+            size="sm"
+            disabled={removing}
+            onClick={() => {
+              setConfirmingRemove(false);
+              management.onUninstall(entry);
+            }}
+          >
+            Remove
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setConfirmingRemove(false)}
+          >
+            Keep
+          </Button>
+        </>
+      ) : (
+        <button
+          type="button"
+          disabled={otherBusy || removing}
+          onClick={() => setConfirmingRemove(true)}
+          className="flex items-center gap-1 rounded px-1.5 py-1 text-xs text-text-tertiary hover:bg-surface-3 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-40"
+        >
+          <Trash2 size={12} />
+          {removing ? "Removing…" : "Remove"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Real progress where the runtime gives us bytes, and honest
+ * indeterminacy where it does not — a bar pretending to move during
+ * "pulling manifest" would be inventing information.
+ */
+function ProgressBar({ progress }: { progress: ModelPullProgress | null }) {
+  const fraction = progress?.fraction ?? null;
+  return (
+    <div className="flex flex-1 items-center gap-2">
+      <div className="h-1 flex-1 overflow-hidden rounded-full bg-surface-3">
+        <div
+          className={clsx(
+            "h-full bg-accent transition-[width] duration-200",
+            fraction === null && "animate-pulse"
+          )}
+          style={{ width: fraction === null ? "100%" : `${Math.round(fraction * 100)}%` }}
+        />
+      </div>
+      <span className="shrink-0 font-mono text-xs text-text-tertiary">
+        {describeProgress(progress)}
+      </span>
+    </div>
+  );
+}
+
+export function describeProgress(progress: ModelPullProgress | null): string {
+  if (!progress) return "Starting…";
+  if (progress.fraction === null) return progress.status || "Working…";
+  const percent = Math.round(progress.fraction * 100);
+  if (progress.totalBytes === null) return `${percent}%`;
+  return `${percent}% of ${formatBytes(progress.totalBytes)}`;
 }

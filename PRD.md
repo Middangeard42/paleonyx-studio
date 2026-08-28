@@ -71,9 +71,15 @@ what's excluded is building a full teaching-curriculum product around them.
    the same underlying screens rather than being two things to maintain.
 
 2. **Open a project.** User points Paleonyx at an existing multi-language
-   repo. The app indexes it (file-aware + AST-aware), surfaces indexing
-   progress honestly, and is immediately useful for navigation/search even
-   before indexing completes.
+   repo. The app indexes it, surfaces indexing progress honestly, and is
+   immediately useful for navigation and search even before indexing
+   completes.
+
+   Status: the file-aware half is built — the tree, language tagging,
+   and gitignore-aware search all work. AST-aware indexing, file
+   watching, and embeddings are not, and this line previously read as
+   though they were. Until they exist, "understands your whole project"
+   is a claim the app should not make in its own copy either.
 
 3. **Ask for a bug fix (suggest-only, default mode).** User describes a bug
    (freeform or via a guided "Bug Fix" task form). Agent investigates
