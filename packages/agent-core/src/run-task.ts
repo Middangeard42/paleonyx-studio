@@ -10,7 +10,11 @@ import type {
   SkillLevel,
   ToolCall,
 } from "@paleonyx/shared-types";
-import { DEFAULT_PERMISSION_MODE, canProposeEdits } from "@paleonyx/shared-types";
+import {
+  DEFAULT_PERMISSION_MODE,
+  canProposeEdits,
+  taskProducesEdits,
+} from "@paleonyx/shared-types";
 import type { ChatModelProvider } from "@paleonyx/runtime";
 import { BudgetTracker, DEFAULT_BUDGET_LIMITS } from "./budget.js";
 import { buildAnswerRequest, buildSystemPrompt, buildUserPrompt } from "./prompt.js";
@@ -71,8 +75,9 @@ export async function runAgentTask(
   const { taskType } = options.input;
   const permissionMode = options.permissionMode ?? DEFAULT_PERMISSION_MODE;
 
-  // Scaffolding is a write like any other, so it clears the same bar.
-  if (taskType !== "explain" && !canProposeEdits(permissionMode)) {
+  // Every task that produces a diff clears the same bar, whatever
+  // its shape — scaffolding and refactoring are writes like any other.
+  if (taskProducesEdits(taskType) && !canProposeEdits(permissionMode)) {
     return escalate(
       taskType,
       budget,
@@ -218,7 +223,7 @@ export async function runAgentTask(
   return {
     plan,
     explanation: parsed.value.explanation,
-    diff: taskType === "explain" ? [] : parsed.value.diff,
+    diff: taskProducesEdits(taskType) ? parsed.value.diff : [],
     confidence: parsed.value.confidence,
     budgetUsage: budget.current,
     investigation: investigation.steps,

@@ -12,6 +12,9 @@ import type { AgentTaskType } from "@paleonyx/shared-types";
 export const TASK_TYPE_LABELS: Record<AgentTaskType, string> = {
   explain: "Explain",
   "bug-fix": "Bug Fix",
+  refactor: "Refactor",
+  "write-tests": "Write Tests",
+  document: "Document",
   scaffold: "New Project",
   "design-change": "Design Change",
 };

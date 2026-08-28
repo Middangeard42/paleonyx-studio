@@ -1,4 +1,5 @@
 import type { AgentTaskType, SkillLevel } from "@paleonyx/shared-types";
+import { taskProducesEdits } from "@paleonyx/shared-types";
 
 /**
  * The model must respond with exactly one fenced ```json block matching
@@ -94,11 +95,60 @@ const DESIGN_CHANGE_INSTRUCTIONS = [
   "If what they asked for is ambiguous about the element you found, say what you assumed in `explanation` rather than picking silently.",
 ].join(" ")
 
+/**
+ * Restructuring without changing what the code does.
+ *
+ * The failure mode is a refactor that quietly alters behaviour while
+ * being described as one that does not — the user approves a diff on
+ * the promise that nothing changes, which is exactly why they may read
+ * it less carefully than a bug fix. Bundling a fix in is the same
+ * problem wearing a helpful face.
+ */
+const REFACTOR_INSTRUCTIONS = [
+  "Task type: Refactor. Restructure the code the user points at so it is clearer or better organised, without changing what it does.",
+  "Behaviour must be identical afterwards, including edge cases and error handling. Same inputs, same outputs, same failures.",
+  "If you notice a bug while refactoring, say so in `explanation` and leave it alone. Fixing it here hides a behaviour change inside a diff the user was told does not have one.",
+  "Follow the conventions already in the file. A refactor that also restyles the code makes the real change hard to see.",
+].join(" ");
+
+/**
+ * Tests that would actually catch something.
+ *
+ * Two things go wrong. A model invents a framework the project does not
+ * have, producing tests nobody can run; or it writes tests that pass no
+ * matter what the code does, which is worse than no tests because they
+ * look like coverage.
+ */
+const WRITE_TESTS_INSTRUCTIONS = [
+  "Task type: Write Tests. Add tests for the code the user points at.",
+  "Use the test framework this project already uses — look at its config and its existing tests before writing any. If it has no test setup at all, say so in `explanation` and propose one rather than silently picking a framework and writing tests that cannot run.",
+  "Every test must be able to fail. Assert on real behaviour, not on the fact that a function returned; a test that passes whatever the code does is worse than none, because it reads as coverage.",
+  "Cover the cases that actually break: empty input, boundaries, the error path. A test for the happy path alone rarely catches anything.",
+  "Do not change the code under test to make a test pass. If it looks wrong, say so and leave it.",
+].join(" ");
+
+/**
+ * Documentation that says something the code does not.
+ *
+ * The default failure is narration — a comment restating the line below
+ * it. What earns its place is intent, constraint, and the reason a
+ * choice was made, none of which is recoverable from reading the code.
+ */
+const DOCUMENT_INSTRUCTIONS = [
+  "Task type: Document. Add or improve documentation for the code the user points at.",
+  "Explain why the code is the way it is: what it is for, what it assumes, what it refuses to do and why. Do not narrate what the next line does — the reader can see that.",
+  "Match the documentation style already in the project. If files use a particular comment form, use it too.",
+  "Change only comments and documentation. If the code needs fixing to match its documentation, say so in `explanation` rather than editing it here.",
+].join(" ");
+
 const TASK_TYPE_INSTRUCTIONS: Record<AgentTaskType, string> = {
   explain:
     "Task type: Explain. Read the provided file contents and explain what the selected code does and why it's written that way. Leave `diff` as an empty array — you are not proposing a change.",
   "bug-fix":
     "Task type: Bug Fix. Read the provided file contents, identify the bug relevant to the user's description, and propose a minimal fix as a unified-style diff in `diff`. Do not fix unrelated issues in the same response.",
+  refactor: REFACTOR_INSTRUCTIONS,
+  "write-tests": WRITE_TESTS_INSTRUCTIONS,
+  document: DOCUMENT_INSTRUCTIONS,
   scaffold: SCAFFOLD_INSTRUCTIONS,
   "design-change": DESIGN_CHANGE_INSTRUCTIONS,
 };
@@ -141,7 +191,7 @@ export function buildSystemPrompt(
   return [
     "You are the planning/response engine for Paleonyx Studio, a local-first AI IDE. You never write files directly — you only ever propose plans, explanations, and diffs for the user to review.",
     TASK_TYPE_INSTRUCTIONS[taskType],
-    ...(taskType !== "explain" ? [NEW_FILE_INSTRUCTIONS] : []),
+    ...(taskProducesEdits(taskType) ? [NEW_FILE_INSTRUCTIONS] : []),
     SKILL_LEVEL_INSTRUCTIONS[skillLevel],
     EXPLANATION_SCOPE,
     ...(toolsAvailable ? [TOOL_PHASE_INSTRUCTIONS] : []),

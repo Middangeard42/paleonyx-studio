@@ -10,9 +10,26 @@
 export type AgentTaskType =
   | "explain"
   | "bug-fix"
+  | "refactor"
+  | "write-tests"
+  | "document"
   | "scaffold"
   /** A change described by pointing at the running page (§3 journey 14). */
   | "design-change";
+
+/**
+ * Whether a task exists to produce a diff.
+ *
+ * Named rather than written as `!== "explain"` at each site. The two
+ * places that matter — the permission gate in agent-core and which
+ * controls the task form offers — must agree, and a comparison repeated
+ * in both drifts the moment a task type is added. Explain is currently
+ * the only one that reads without writing, but that is a fact about the
+ * task list, not a rule the checks should encode.
+ */
+export function taskProducesEdits(taskType: AgentTaskType): boolean {
+  return taskType !== "explain";
+}
 
 export interface AgentPlanStep {
   id: string;

@@ -67,3 +67,5 @@ export { PreviewPanel } from "./components/PreviewPanel.js";
 export type { PreviewPanelProps, PreviewViewportId } from "./components/PreviewPanel.js";
 export { describeSelection } from "./components/PreviewPanel.js";
 export type { ModelManagement } from "./components/ModelCatalogView.js";
+export { BudgetControl, parseLimits } from "./components/BudgetControl.js";
+export type { BudgetControlProps } from "./components/BudgetControl.js";

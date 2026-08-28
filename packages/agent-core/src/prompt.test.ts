@@ -76,3 +76,50 @@ describe("buildSystemPrompt for a new project", () => {
     expect(prompt).toMatch(/run as delivered/i);
   });
 });
+
+describe("buildSystemPrompt for the code-change task types", () => {
+  // A refactor is approved on the promise that behaviour does not
+  // change, which is exactly why it may be read less carefully than a
+  // bug fix. Silently bundling a fix in breaks that promise.
+  it("holds a refactor to identical behaviour and forbids sneaking in a fix", () => {
+    const prompt = buildSystemPrompt("refactor", "professional");
+    expect(prompt).toMatch(/without changing what it does/i);
+    expect(prompt).toMatch(/identical/i);
+    expect(prompt).toMatch(/leave it alone/i);
+  });
+
+  // Two ways tests go wrong: written for a framework the project does
+  // not have, or written so they pass whatever the code does.
+  it("makes tests use the project's own framework and be able to fail", () => {
+    const prompt = buildSystemPrompt("write-tests", "professional");
+    expect(prompt).toMatch(/framework this project already uses/i);
+    expect(prompt).toMatch(/no test setup at all/i);
+    expect(prompt).toMatch(/must be able to fail/i);
+    expect(prompt).toMatch(/do not change the code under test/i);
+  });
+
+  it("asks documentation to explain why rather than narrate the next line", () => {
+    const prompt = buildSystemPrompt("document", "professional");
+    expect(prompt).toMatch(/why the code is the way it is/i);
+    expect(prompt).toMatch(/do not narrate/i);
+    expect(prompt).toMatch(/only comments and documentation/i);
+  });
+
+  it("gives every editing task the new-file guidance, and explain none", () => {
+    for (const type of ["bug-fix", "refactor", "write-tests", "document", "scaffold"] as const) {
+      expect(buildSystemPrompt(type, "experienced"), type).toMatch(
+        /does not exist yet/i
+      );
+    }
+    expect(buildSystemPrompt("explain", "experienced")).not.toMatch(
+      /does not exist yet/i
+    );
+  });
+
+  it("gives each task type its own instructions", () => {
+    const prompts = (
+      ["explain", "bug-fix", "refactor", "write-tests", "document"] as const
+    ).map((type) => buildSystemPrompt(type, "experienced"));
+    expect(new Set(prompts).size).toBe(prompts.length);
+  });
+});

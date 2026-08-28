@@ -1,5 +1,6 @@
 import clsx from "clsx";
 import type { AgentTaskType } from "@paleonyx/shared-types";
+import { taskProducesEdits } from "@paleonyx/shared-types";
 import { Button } from "../primitives/Button.js";
 
 const TASK_TYPES: { value: AgentTaskType; label: string; placeholder: string }[] = [
@@ -13,6 +14,21 @@ const TASK_TYPES: { value: AgentTaskType; label: string; placeholder: string }[]
     label: "Bug Fix",
     placeholder: "Describe the bug you're seeing…",
   },
+  {
+    value: "refactor",
+    label: "Refactor",
+    placeholder: "What should be restructured, and what's wrong with it now?",
+  },
+  {
+    value: "write-tests",
+    label: "Write Tests",
+    placeholder: "What should be tested? Leave blank to cover the file as a whole.",
+  },
+  {
+    value: "document",
+    label: "Document",
+    placeholder: "What needs documenting? Leave blank to document the whole file.",
+  },
 ];
 
 export interface TaskFormProps {
@@ -24,16 +40,20 @@ export interface TaskFormProps {
   disabled: boolean;
   contextFileCount: number;
   /**
-   * False under read-only. The Bug Fix task exists to produce a diff, so
-   * offering it when the agent may not propose one would be a control
-   * that cannot do its job.
+   * False under read-only. Every task except Explain exists to produce a
+   * diff, so offering one when the agent may not propose any would be a
+   * control that cannot do its job.
    */
   canProposeEdits?: boolean;
 }
 
 /**
- * Guided task form, not just freeform prompting (PRD.md §3 journey 5) —
- * v0 supports the two read/suggest-only task types (PRD.md §9 decision 1).
+ * Guided task form, not just freeform prompting (PRD.md §3 journey 5).
+ *
+ * Lists only the task types that make sense against code already open.
+ * New Project and Design Change are reached from where they belong — the
+ * wizard and the preview — and offering them here would be offering
+ * controls with nothing to act on.
  */
 export function TaskForm({
   taskType,
@@ -55,9 +75,9 @@ export function TaskForm({
       }}
       className="flex flex-col gap-2"
     >
-      <div role="radiogroup" aria-label="Task type" className="flex gap-1">
+      <div role="radiogroup" aria-label="Task type" className="flex flex-wrap gap-1">
         {TASK_TYPES.map((type) => {
-          const unavailable = type.value === "bug-fix" && !canProposeEdits;
+          const unavailable = taskProducesEdits(type.value) && !canProposeEdits;
           return (
             <button
               key={type.value}

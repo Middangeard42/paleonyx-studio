@@ -71,6 +71,7 @@ import type {
   AgentTaskInput,
   AgentTaskResult,
   AgentTaskType,
+  BudgetLimits,
   BudgetUsage,
   HistoryEntry,
   ModelCatalog,
@@ -594,6 +595,16 @@ function Workspace({
   );
 
   /**
+   * Per project for the same reason the permission mode is: how much
+   * work a task needs is a property of the codebase, not of the person.
+   * A sprawling repo legitimately wants more steps than a scratch one.
+   */
+  const [budgetLimits, setBudgetLimits] = useLocalPreference<BudgetLimits>(
+    `paleonyx.budgetLimits:${projectRoot}`,
+    DEFAULT_BUDGET_LIMITS
+  );
+
+  /**
    * Whether the proposal already failed to fit when it arrived, meaning
    * the model misread the files rather than the user having changed them.
    */
@@ -1065,6 +1076,7 @@ function Workspace({
         provider,
         fs,
         input,
+        budgetLimits,
         skillLevel,
         permissionMode,
         // Supplied unconditionally; agent-core decides whether the tool
@@ -1332,7 +1344,9 @@ function Workspace({
         permissionMode={permissionMode}
         onPermissionModeChange={setPermissionMode}
         budgetUsage={budgetUsage}
-        budgetLimits={DEFAULT_BUDGET_LIMITS}
+        budgetLimits={budgetLimits}
+        onBudgetLimitsChange={setBudgetLimits}
+        defaultBudgetLimits={DEFAULT_BUDGET_LIMITS}
         indexedFileCount={files.length}
         unsavedCount={dirtyPaths.size}
       />

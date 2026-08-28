@@ -304,3 +304,51 @@ describe("runAgentTask for a new project", () => {
     expect(called).toBe(false);
   });
 });
+
+describe("permission gating across task types", () => {
+  // Read-only has to stop every task that writes, not just the ones that
+  // existed when the check was written.
+  it("refuses every editing task under read-only, before the model is called", async () => {
+    for (const taskType of [
+      "bug-fix",
+      "refactor",
+      "write-tests",
+      "document",
+      "scaffold",
+      "design-change",
+    ] as const) {
+      let called = false;
+      const result = await runAgentTask({
+        provider: new MockAdapter({
+          respond: () => {
+            called = true;
+            return "{}";
+          },
+          latencyMs: 0,
+        }),
+        fs: new FakeFs({}),
+        input: { taskType, instructions: "do the thing", targetFiles: [] },
+        skillLevel: "experienced",
+        permissionMode: "read-only",
+      });
+
+      expect(result.escalation?.reason, taskType).toBe("permission-denied");
+      expect(called, `${taskType} reached the model`).toBe(false);
+    }
+  });
+
+  it("allows explaining under read-only", async () => {
+    const result = await runAgentTask({
+      provider: provider(),
+      fs: new FakeFs({ "src/sum.ts": BUGGY_SUM }),
+      input: {
+        taskType: "explain",
+        instructions: "what does this do",
+        targetFiles: ["src/sum.ts"],
+      },
+      skillLevel: "experienced",
+      permissionMode: "read-only",
+    });
+    expect(result.escalation).toBeUndefined();
+  });
+});

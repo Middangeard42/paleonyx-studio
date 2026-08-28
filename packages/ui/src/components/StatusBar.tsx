@@ -1,6 +1,7 @@
 import type { BudgetLimits, BudgetUsage, PermissionMode } from "@paleonyx/shared-types";
 import { Cpu, FolderTree } from "lucide-react";
 import { PermissionIndicator } from "./PermissionIndicator.js";
+import { BudgetControl } from "./BudgetControl.js";
 
 export interface StatusBarProps {
   modelLabel: string;
@@ -17,6 +18,9 @@ export interface StatusBarProps {
   unsavedCount?: number;
   /** Omitted where the mode is fixed, e.g. the web harness. */
   onPermissionModeChange?: (mode: PermissionMode) => void;
+  /** Omitted where the limits are fixed, which renders them as text. */
+  onBudgetLimitsChange?: (limits: BudgetLimits) => void;
+  defaultBudgetLimits?: BudgetLimits;
 }
 
 /**
@@ -32,10 +36,9 @@ export function StatusBar({
   indexedFileCount,
   unsavedCount = 0,
   onPermissionModeChange,
+  onBudgetLimitsChange,
+  defaultBudgetLimits,
 }: StatusBarProps) {
-  const budgetExhausted =
-    budgetUsage.toolCalls >= budgetLimits.maxToolCalls || budgetUsage.tokens >= budgetLimits.maxTokens;
-
   return (
     <footer className="flex h-6 shrink-0 items-center justify-between border-t border-border-subtle bg-surface-1 px-3 text-xs text-text-secondary">
       <div className="flex items-center gap-3">
@@ -55,10 +58,12 @@ export function StatusBar({
         )}
       </div>
       <div className="flex items-center gap-3">
-        <span className={budgetExhausted ? "text-status-danger" : undefined}>
-          Budget: {budgetUsage.toolCalls}/{budgetLimits.maxToolCalls} tool calls ·{" "}
-          {budgetUsage.tokens}/{budgetLimits.maxTokens} tokens
-        </span>
+        <BudgetControl
+          usage={budgetUsage}
+          limits={budgetLimits}
+          onChange={onBudgetLimitsChange}
+          defaults={defaultBudgetLimits}
+        />
         <PermissionIndicator mode={permissionMode} onChange={onPermissionModeChange} />
       </div>
     </footer>
