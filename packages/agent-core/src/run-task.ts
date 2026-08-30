@@ -6,6 +6,7 @@ import type {
   ChatMessage,
   EscalationReason,
   FileSystemReader,
+  CodeSymbol,
   PermissionMode,
   SkillLevel,
   ToolCall,
@@ -18,6 +19,7 @@ import {
 import type { ChatModelProvider } from "@paleonyx/runtime";
 import { BudgetTracker, DEFAULT_BUDGET_LIMITS } from "./budget.js";
 import { buildAnswerRequest, buildSystemPrompt, buildUserPrompt } from "./prompt.js";
+import { formatOutline, shouldOutline } from "@paleonyx/indexing";
 import { parseAgentResponse } from "./parse-response.js";
 import { READ_FILE_TOOL_NAME, executeReadFile } from "./tools/read-file.js";
 import { investigate } from "./investigate.js";
@@ -50,6 +52,14 @@ export interface RunAgentTaskOptions {
    * and the caller may let the user turn them off.
    */
   contextDocs?: readonly { path: string; content: string }[];
+  /**
+   * Parses a file's symbols, when the host can. A callback rather than a
+   * dependency for the same reason `runCommand` is one: tree-sitter runs
+   * in the desktop shell, and agent-core must not know that. Absent
+   * means every file goes in whole, which is what happened before AST
+   * indexing existed.
+   */
+  getSymbols?: (path: string) => Promise<CodeSymbol[]>;
   /** Lets the UI render the Task Plan Card as soon as the plan is known. */
   onPlan?: (plan: AgentPlan) => void;
   /**
@@ -94,6 +104,13 @@ export async function runAgentTask(
     .catch(() => [] as string[]);
 
   const fileContents: Record<string, string> = {};
+  /**
+   * Long files summarized rather than sent. The agent still knows they
+   * exist and what is in them, and can read a range when it needs the
+   * code — which beats spending the window on a file the question was
+   * not about.
+   */
+  const outlines: Record<string, string> = {};
   for (const [index, path] of options.input.targetFiles.entries()) {
     if (budget.isExhausted()) {
       return escalate(taskType, budget, "budget-exhausted", "Ran out of tool-call budget while reading target files.");
@@ -105,8 +122,19 @@ export async function runAgentTask(
     );
     const call: ToolCall = { id: path, name: READ_FILE_TOOL_NAME, arguments: { path } };
     try {
-      fileContents[path] = await executeReadFile(options.fs, call);
+      const content = await executeReadFile(options.fs, call);
       budget.recordToolCall();
+
+      // Best effort: a file whose symbols cannot be read is simply sent
+      // whole, which is the behaviour that existed before this.
+      const symbols = options.getSymbols
+        ? await options.getSymbols(path).catch(() => [])
+        : [];
+      if (shouldOutline(content, symbols)) {
+        outlines[path] = formatOutline(path, symbols);
+      } else {
+        fileContents[path] = content;
+      }
     } catch (error) {
       return escalate(
         taskType,
@@ -137,7 +165,8 @@ export async function runAgentTask(
         options.input.instructions,
         fileContents,
         projectFiles,
-        options.contextDocs ?? []
+        options.contextDocs ?? [],
+        outlines
       ),
     },
   ];

@@ -75,11 +75,18 @@ what's excluded is building a full teaching-curriculum product around them.
    immediately useful for navigation and search even before indexing
    completes.
 
-   Status: the file-aware half is built — the tree, language tagging,
-   and gitignore-aware search all work. AST-aware indexing, file
-   watching, and embeddings are not, and this line previously read as
-   though they were. Until they exist, "understands your whole project"
-   is a claim the app should not make in its own copy either.
+   Status: file-aware indexing and AST-aware symbol extraction for the
+   Tier 1 languages (Python, JavaScript, TypeScript, TSX) are built —
+   tree, language tagging, gitignore-aware search, and an outline of the
+   functions, classes, types, and methods in a file. Long files now
+   reach the agent as that outline rather than as text, which is where
+   AST-awareness earns its keep: the context window stops being spent on
+   code nobody asked about.
+
+   Still missing: file watching, embeddings, cross-file references, and
+   grammars for the Tier 2-3 languages, which stay file-aware. Until
+   those exist, "understands your whole project" is a claim the app
+   should not make in its own copy.
 
 3. **Ask for a bug fix (suggest-only, default mode).** User describes a bug
    (freeform or via a guided "Bug Fix" task form). Agent investigates

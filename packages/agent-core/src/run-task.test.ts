@@ -352,3 +352,112 @@ describe("permission gating across task types", () => {
     expect(result.escalation).toBeUndefined();
   });
 });
+
+describe("long files are outlined rather than sent whole", () => {
+  const LONG = Array.from({ length: 600 }, (_, i) => `  const line${i} = ${i};`).join("\n");
+  const SYMBOLS = [
+    { name: "compute", kind: "function" as const, startLine: 10, endLine: 300 },
+    { name: "Helper", kind: "class" as const, startLine: 310, endLine: 590 },
+  ];
+
+  /** Captures the prompt the model actually received. */
+  function capturing(seen: string[]) {
+    return new MockAdapter({
+      respond: (request) => {
+        seen.push(request.messages.map((m) => m.content).join("\n"));
+        return JSON.stringify({
+          summary: "s",
+          steps: [{ id: "1", description: "d", targetFiles: [] }],
+          explanation: "e",
+          diff: [],
+          confidence: "high",
+        });
+      },
+      latencyMs: 0,
+    });
+  }
+
+  it("sends the map of a long file instead of its text", async () => {
+    const seen: string[] = [];
+    await runAgentTask({
+      provider: capturing(seen),
+      fs: new FakeFs({ "src/big.ts": LONG }),
+      input: { taskType: "explain", instructions: "what is here", targetFiles: ["src/big.ts"] },
+      skillLevel: "experienced",
+      getSymbols: async () => SYMBOLS,
+    });
+
+    const prompt = seen[0]!;
+    expect(prompt).toContain("function compute (lines 10-300)");
+    expect(prompt).toContain("class Helper (lines 310-590)");
+    // The body must not be there, or the window is spent anyway.
+    expect(prompt).not.toContain("const line42");
+  });
+
+  // A model shown an outline and led to believe it is the file will
+  // answer about code it has never seen.
+  it("says plainly that the code was not included", async () => {
+    const seen: string[] = [];
+    await runAgentTask({
+      provider: capturing(seen),
+      fs: new FakeFs({ "src/big.ts": LONG }),
+      input: { taskType: "explain", instructions: "x", targetFiles: ["src/big.ts"] },
+      skillLevel: "experienced",
+      getSymbols: async () => SYMBOLS,
+    });
+    expect(seen[0]!).toMatch(/have NOT been shown this code/i);
+  });
+
+  it("sends a short file whole", async () => {
+    const seen: string[] = [];
+    await runAgentTask({
+      provider: capturing(seen),
+      fs: new FakeFs({ "src/sum.ts": BUGGY_SUM }),
+      input: { taskType: "explain", instructions: "x", targetFiles: ["src/sum.ts"] },
+      skillLevel: "experienced",
+      getSymbols: async () => [
+        { name: "sum", kind: "function" as const, startLine: 1, endLine: 7 },
+      ],
+    });
+    expect(seen[0]!).toContain("export function sum");
+  });
+
+  // Before AST indexing there was no getSymbols at all, and a host that
+  // cannot parse must behave exactly as it did then.
+  it("sends everything whole when the host cannot parse", async () => {
+    const seen: string[] = [];
+    await runAgentTask({
+      provider: capturing(seen),
+      fs: new FakeFs({ "src/big.ts": LONG }),
+      input: { taskType: "explain", instructions: "x", targetFiles: ["src/big.ts"] },
+      skillLevel: "experienced",
+    });
+    expect(seen[0]!).toContain("const line42");
+  });
+
+  it("sends a long file whole when parsing finds nothing", async () => {
+    const seen: string[] = [];
+    await runAgentTask({
+      provider: capturing(seen),
+      fs: new FakeFs({ "src/big.ts": LONG }),
+      input: { taskType: "explain", instructions: "x", targetFiles: ["src/big.ts"] },
+      skillLevel: "experienced",
+      getSymbols: async () => [],
+    });
+    expect(seen[0]!).toContain("const line42");
+  });
+
+  it("still sends the file whole when parsing throws", async () => {
+    const seen: string[] = [];
+    await runAgentTask({
+      provider: capturing(seen),
+      fs: new FakeFs({ "src/big.ts": LONG }),
+      input: { taskType: "explain", instructions: "x", targetFiles: ["src/big.ts"] },
+      skillLevel: "experienced",
+      getSymbols: async () => {
+        throw new Error("parser exploded");
+      },
+    });
+    expect(seen[0]!).toContain("const line42");
+  });
+});

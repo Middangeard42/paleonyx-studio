@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@paleonyx/runtime": "workspace:*",
-    "@paleonyx/shared-types": "workspace:*"
+    "@paleonyx/shared-types": "workspace:*",
+    "@paleonyx/indexing": "workspace:*"
   },
   "devDependencies": {
     "@paleonyx/vcs": "workspace:*",

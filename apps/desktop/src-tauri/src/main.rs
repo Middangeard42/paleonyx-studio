@@ -7,6 +7,7 @@ mod git;
 mod preview;
 mod search;
 mod secrets;
+mod symbols;
 mod system_profile;
 
 use commands::ProjectState;
@@ -36,6 +37,7 @@ fn main() {
             preview::stop_preview,
             preview::set_design_mode,
             search::search_project,
+            symbols::file_symbols,
             exec::run_command
         ])
         .run(tauri::generate_context!())

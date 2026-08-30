@@ -238,7 +238,15 @@ export function buildUserPrompt(
   instructions: string,
   fileContents: Record<string, string>,
   projectFiles: readonly string[] = [],
-  contextDocs: readonly ProjectContextDoc[] = []
+  contextDocs: readonly ProjectContextDoc[] = [],
+  /**
+   * Files given as a map of what is in them rather than their text,
+   * because sending them whole would spend the context window on code
+   * nobody asked about. Kept in their own section, labelled: a model
+   * shown an outline and led to believe it is the file will answer
+   * about code it has not seen.
+   */
+  outlines: Record<string, string> = {}
 ): string {
   const sections = [`Request: ${instructions}`];
 
@@ -263,6 +271,16 @@ export function buildUserPrompt(
       ]
         .filter(Boolean)
         .join("\n")
+    );
+  }
+
+  const outlineEntries = Object.values(outlines);
+  if (outlineEntries.length > 0) {
+    sections.push(
+      [
+        "These files are too long to include in full, so here is what is in each one instead of its text. You have NOT been shown this code — to see any of it, read the file. The line numbers tell you where to look.",
+        ...outlineEntries,
+      ].join("\n\n")
     );
   }
 

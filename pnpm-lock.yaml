@@ -160,6 +160,9 @@ importers:
 
   packages/agent-core:
     dependencies:
+      '@paleonyx/indexing':
+        specifier: workspace:*
+        version: link:../indexing
       '@paleonyx/runtime':
         specifier: workspace:*
         version: link:../runtime

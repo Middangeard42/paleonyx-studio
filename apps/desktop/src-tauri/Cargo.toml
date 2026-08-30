@@ -21,6 +21,18 @@ sysinfo = "0.33"
 # would use.
 ignore = "0.4"
 
+# AST-aware indexing for the Tier 1 languages (PRD.md §4). tree-sitter
+# is what GitHub, Neovim, Helix, and Zed navigate code with; writing
+# three language parsers by hand is not a real alternative, and each
+# language's own toolchain would mean shipping a TypeScript compiler and
+# a Python runtime with no path to the later tiers. Six new crates, of
+# which three are grammars — the rest of its tree was already here via
+# `ignore`.
+tree-sitter = "0.24"
+tree-sitter-python = "0.23"
+tree-sitter-javascript = "0.23"
+tree-sitter-typescript = "0.23"
+
 # OS-native credential storage: Windows Credential Manager, macOS
 # Keychain, Linux Secret Service. CLAUDE.md §4.2 requires a real
 # credential store rather than a hand-rolled encryption scheme, and this

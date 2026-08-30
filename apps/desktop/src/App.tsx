@@ -90,6 +90,7 @@ import { TauriFileSystem, openProject } from "./tauri-filesystem.js";
 import { openFolderDialog } from "./tauri-dialog.js";
 import { searchProject } from "./tauri-search.js";
 import { runProjectCommand } from "./tauri-exec.js";
+import { fileSymbols } from "./tauri-symbols.js";
 import {
   previewUrl,
   setDesignMode,
@@ -1082,6 +1083,9 @@ function Workspace({
         // Supplied unconditionally; agent-core decides whether the tool
         // is offered at all, based on the mode and the allowlist.
         runCommand: runProjectCommand,
+        // Lets long files go in as a map of what they contain rather
+        // than their whole text.
+        getSymbols: fileSymbols,
         contextDocs: docsEnabled ? contextDocs : [],
         onStatus: setStatusMessage,
       });
