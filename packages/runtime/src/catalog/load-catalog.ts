@@ -114,7 +114,51 @@ async function fetchInstalledModels(baseUrl: string): Promise<ModelCatalogEntry[
       codeSpecialized: false,
     });
   }
-  return entries;
+
+  return refineCapabilities(baseUrl, entries);
+}
+
+/**
+ * Re-reads tool support from `/api/show`, which is the endpoint that
+ * actually knows.
+ *
+ * Ollama's two endpoints disagree, and not harmlessly. For a GGUF pulled
+ * from HuggingFace, `/api/tags` reported `["completion"]` while
+ * `/api/show` reported `["tools", "thinking", "completion"]` for the
+ * same build — the listing does not analyse the chat template and the
+ * inspection does. First-party models agree in both, which is why this
+ * went unnoticed: qwen2.5-coder looked right while Ornith, the model
+ * this product recommends by default, was told it could not run
+ * commands and ran single-pass for it.
+ *
+ * One request per installed model, on loopback, in parallel. Any that
+ * fails keeps whatever `/api/tags` said, so this can only add
+ * capabilities we would otherwise have missed.
+ */
+async function refineCapabilities(
+  baseUrl: string,
+  entries: ModelCatalogEntry[]
+): Promise<ModelCatalogEntry[]> {
+  return Promise.all(
+    entries.map(async (entry) => {
+      try {
+        const response = await fetch(`${baseUrl}/api/show`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: entry.id }),
+        });
+        if (!response.ok) return entry;
+        const shown = (await response.json()) as { capabilities?: unknown };
+        if (!Array.isArray(shown.capabilities)) return entry;
+        return {
+          ...entry,
+          supportsToolCalling: hasCapability(shown.capabilities, "tools"),
+        };
+      } catch {
+        return entry;
+      }
+    })
+  );
 }
 
 function hasCapability(raw: unknown, capability: string): boolean {

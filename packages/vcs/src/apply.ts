@@ -31,8 +31,27 @@ export type PatchResult =
  * would leave the user's tree in a state neither they nor the agent
  * intended, which CLAUDE.md §6 rules out.
  */
-export function applyFileDiff(content: string, diff: FileDiff): PatchResult {
-  return patch(content, diff, "apply");
+export interface PatchOptions {
+  /**
+   * Allows a hunk whose context does not match to be placed by the lines
+   * it changes, when those occur exactly once.
+   *
+   * Off by default, and the caller must earn it. Wrong context has two
+   * causes that look identical in a diff: the model misquoted the file,
+   * or the user edited the very lines it quoted. Placing the change is
+   * right for the first and destroys work for the second, so this may
+   * only be set when the caller knows the file is byte-for-byte what the
+   * agent was shown — at which point the user cannot be the cause.
+   */
+  anchorWhenContextFails?: boolean;
+}
+
+export function applyFileDiff(
+  content: string,
+  diff: FileDiff,
+  options: PatchOptions = {}
+): PatchResult {
+  return patch(content, diff, "apply", options);
 }
 
 /**
@@ -50,7 +69,12 @@ export function revertFileDiff(content: string, diff: FileDiff): PatchResult {
   return patch(content, diff, "revert");
 }
 
-function patch(content: string, diff: FileDiff, mode: "apply" | "revert"): PatchResult {
+function patch(
+  content: string,
+  diff: FileDiff,
+  mode: "apply" | "revert",
+  options: PatchOptions = {}
+): PatchResult {
   const ending = detectLineEnding(content);
   let lines = splitLines(content);
 
@@ -66,7 +90,42 @@ function patch(content: string, diff: FileDiff, mode: "apply" | "revert"): Patch
     const search = mode === "apply" ? linesBeforeApply(hunk) : linesAfterApply(hunk);
 
     const hint = hintIndexFor(hunk, mode === "apply" ? offset : 0);
-    const located = locate(lines, search, hint);
+    let located = locate(lines, search, hint);
+    let placedHunk = hunk;
+    let placedSearch = search;
+
+    /**
+     * Last resort: place the change by the lines it actually changes,
+     * ignoring the context around them.
+     *
+     * Context exists to disambiguate. When the lines being replaced
+     * occur exactly once in the file there is nothing to disambiguate,
+     * so wrong context is not a reason to refuse — and wrong context is
+     * what a small model produces most often. The observed case: a
+     * one-line text change whose `remove` line was correct and unique,
+     * refused because the model listed the button before the heading
+     * when the file has them the other way round.
+     *
+     * Uniqueness is required rather than preferred, which is why no
+     * hint is passed: a second occurrence makes this a guess about which
+     * one the user meant, and the context that would normally settle it
+     * is precisely what we already know to be wrong. This can never
+     * place a pure insertion, which has no changed lines to anchor on.
+     */
+    if (located.kind === "not-found" && options.anchorWhenContextFails) {
+      const anchored = { ...hunk, lines: hunk.lines.filter((l) => l.type !== "context") };
+      const anchorSearch =
+        mode === "apply" ? linesBeforeApply(anchored) : linesAfterApply(anchored);
+
+      if (anchorSearch.length > 0) {
+        const retry = locate(lines, anchorSearch, undefined);
+        if (retry.kind === "found") {
+          located = retry;
+          placedHunk = anchored;
+          placedSearch = anchorSearch;
+        }
+      }
+    }
 
     if (located.kind === "not-found") {
       return {
@@ -97,15 +156,15 @@ function patch(content: string, diff: FileDiff, mode: "apply" | "revert"): Patch
     // context lines keep the file's spacing and added lines land at the
     // depth the file actually uses rather than the depth the hunk
     // assumed (see buildReplacement).
-    const region = lines.slice(located.index, located.index + search.length);
-    const placed = buildReplacement(hunk, region, mode);
+    const region = lines.slice(located.index, located.index + placedSearch.length);
+    const placed = buildReplacement(placedHunk, region, mode);
 
     lines = [
       ...lines.slice(0, located.index),
       ...placed,
-      ...lines.slice(located.index + search.length),
+      ...lines.slice(located.index + placedSearch.length),
     ];
-    offset += placed.length - search.length;
+    offset += placed.length - placedSearch.length;
   }
 
   return { ok: true, content: joinLines(lines, ending) };
@@ -177,7 +236,14 @@ function matchesCreation(current: string, diff: FileDiff): boolean {
 export function applyChange(
   files: Map<string, string>,
   diffs: FileDiff[],
-  mode: "apply" | "revert" = "apply"
+  mode: "apply" | "revert" = "apply",
+  /**
+   * Content each file had when the agent read it. A file still equal to
+   * what it was shown cannot have been edited by the user, which is the
+   * only condition under which a context mismatch is safely the model's
+   * fault (see PatchOptions.anchorWhenContextFails).
+   */
+  seenByAgent?: ReadonlyMap<string, string>
 ): MultiFileResult {
   const updated = new Map<string, string>();
   const created = new Set<string>();
@@ -229,7 +295,14 @@ export function applyChange(
       continue;
     }
 
-    const result = mode === "apply" ? applyFileDiff(current, diff) : revertFileDiff(current, diff);
+    const unchangedSinceRead =
+      seenByAgent !== undefined && seenByAgent.get(diff.filePath) === current;
+    const result =
+      mode === "apply"
+        ? applyFileDiff(current, diff, {
+            anchorWhenContextFails: unchangedSinceRead,
+          })
+        : revertFileDiff(current, diff);
     if (result.ok) {
       updated.set(diff.filePath, result.content);
     } else {

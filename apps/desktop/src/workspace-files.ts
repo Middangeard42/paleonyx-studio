@@ -130,9 +130,10 @@ export function checkWritable(
  */
 export function isProposalStale(
   state: WorkspaceFiles,
-  diffs: readonly FileDiff[]
+  diffs: readonly FileDiff[],
+  seenByAgent?: Record<string, string>
 ): boolean {
-  return proposalConflict(state, diffs) !== null;
+  return proposalConflict(state, diffs, seenByAgent) !== null;
 }
 
 /**
@@ -146,12 +147,17 @@ export function isProposalStale(
  */
 export function proposalConflict(
   state: WorkspaceFiles,
-  diffs: readonly FileDiff[]
+  diffs: readonly FileDiff[],
+  seenByAgent?: Record<string, string>
 ): string | null {
   for (const diff of diffs) {
     const content = state.contents[diff.filePath];
     if (content === undefined) continue;
-    const result = applyFileDiff(content, diff);
+    // Must ask the same question the apply will ask, or the badge says
+    // "doesn't match" about a change that would apply perfectly well.
+    const result = applyFileDiff(content, diff, {
+      anchorWhenContextFails: seenByAgent?.[diff.filePath] === content,
+    });
     if (!result.ok) return result.conflict.message;
   }
   return null;

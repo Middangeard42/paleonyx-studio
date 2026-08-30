@@ -43,9 +43,17 @@ export type ChangeOutcome =
  */
 export async function applyAgentChange(
   store: ChangeStore,
-  record: AgentChangeRecord
+  record: AgentChangeRecord,
+  /**
+   * What each file held when the agent read it, from
+   * `AgentTaskResult.filesSeen`. Supplying it lets a hunk with wrong
+   * context still be placed for files that have not changed since —
+   * omitting it keeps the strict behaviour, which is the right default
+   * for any caller that cannot vouch for that.
+   */
+  seenByAgent?: ReadonlyMap<string, string>
 ): Promise<ChangeOutcome> {
-  return runChange(store, record, record.diffs, "apply");
+  return runChange(store, record, record.diffs, "apply", seenByAgent);
 }
 
 /**
@@ -75,7 +83,8 @@ async function runChange(
   store: ChangeStore,
   record: AgentChangeRecord,
   diffs: FileDiff[],
-  mode: "apply" | "revert"
+  mode: "apply" | "revert",
+  seenByAgent?: ReadonlyMap<string, string>
 ): Promise<ChangeOutcome> {
   const paths = [...new Set(diffs.map((diff) => diff.filePath))];
 
@@ -92,7 +101,7 @@ async function runChange(
     }
   }
 
-  const result = applyChange(files, diffs, mode);
+  const result = applyChange(files, diffs, mode, seenByAgent);
   if (!result.ok) {
     return { ok: false, conflicts: result.conflicts };
   }

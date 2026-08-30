@@ -111,6 +111,7 @@ export async function runAgentTask(
    * not about.
    */
   const outlines: Record<string, string> = {};
+  const filesSeen: Record<string, string> = {};
   for (const [index, path] of options.input.targetFiles.entries()) {
     if (budget.isExhausted()) {
       return escalate(taskType, budget, "budget-exhausted", "Ran out of tool-call budget while reading target files.");
@@ -130,6 +131,10 @@ export async function runAgentTask(
       const symbols = options.getSymbols
         ? await options.getSymbols(path).catch(() => [])
         : [];
+      // Kept whatever form it was sent in: this is the content the
+      // model actually saw, and the apply path compares against it to
+      // tell "the model misquoted the file" from "the user edited it".
+      filesSeen[path] = content;
       if (shouldOutline(content, symbols)) {
         outlines[path] = formatOutline(path, symbols);
       } else {
@@ -256,6 +261,7 @@ export async function runAgentTask(
     confidence: parsed.value.confidence,
     budgetUsage: budget.current,
     investigation: investigation.steps,
+    filesSeen,
   };
 }
 
@@ -276,5 +282,8 @@ function escalate(
     // Kept even on a pause: seeing which commands ran and what they said
     // is usually what explains why the agent stopped (CLAUDE.md §7).
     investigation: steps,
+    // An escalation carries no diff, so there is nothing to place and
+    // nothing to compare against.
+    filesSeen: {},
   };
 }

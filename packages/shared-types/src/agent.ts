@@ -100,6 +100,15 @@ export interface AgentTaskResult {
    * what it did, not just what it concluded (CLAUDE.md §7).
    */
   investigation: AgentInvestigationStep[];
+  /**
+   * Each file's content as the agent read it.
+   *
+   * Not for display — it is the discriminator the apply path needs. A
+   * hunk whose context does not match either misquotes the file or
+   * collides with a user edit, and those demand opposite responses. If
+   * the file is still exactly this, the user cannot be the cause.
+   */
+  filesSeen: Record<string, string>;
 }
 
 export interface AgentInvestigationStep {

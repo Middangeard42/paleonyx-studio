@@ -699,3 +699,168 @@ describe("explaining a failure to place a change", () => {
     expect(result.conflict.message).toContain("…");
   });
 });
+
+/**
+ * Context the model got wrong, around a change it got right.
+ *
+ * The observed failure: renaming text in an <h1> produced a correct
+ * one-for-one substitution, and listed the button before the heading
+ * when the file has the heading first. Every quoted line existed; the
+ * run did not. The change itself was unambiguous — that <h1> occurs
+ * once — so refusing helped nobody.
+ */
+describe("placing a change by what it changes", () => {
+  const HTML = [
+    "<h1>Chicken Counting App</h1>",
+    '<button onclick="countChickens()">Count Chickens</button>',
+    '<p id="count"></p>',
+  ].join("\n");
+
+  it("applies when the context is out of order but the changed line is unique", () => {
+    const result = applyFileDiff(HTML, {
+      filePath: "index.html",
+      hunks: [
+        {
+          header: "@@ -19,1 +19,1 @@",
+          lines: [
+            // Model listed the button first; the file has the h1 first.
+            { type: "context", content: '<button onclick="countChickens()">Count Chickens</button>' },
+            { type: "remove", content: "<h1>Chicken Counting App</h1>" },
+            { type: "add", content: "<h1>Chicken Counting Application</h1>" },
+            { type: "context", content: '<p id="count"></p>' },
+          ],
+        },
+      ],
+    }, { anchorWhenContextFails: true });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.content).toBe(
+      [
+        "<h1>Chicken Counting Application</h1>",
+        '<button onclick="countChickens()">Count Chickens</button>',
+        '<p id="count"></p>',
+      ].join("\n")
+    );
+  });
+
+  it("applies when the context lines do not exist at all", () => {
+    const result = applyFileDiff(HTML, {
+      filePath: "index.html",
+      hunks: [
+        {
+          header: "",
+          lines: [
+            { type: "context", content: "<div>never existed</div>" },
+            { type: "remove", content: '<p id="count"></p>' },
+            { type: "add", content: '<p id="count">0</p>' },
+          ],
+        },
+      ],
+    }, { anchorWhenContextFails: true });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.content).toContain('<p id="count">0</p>');
+  });
+
+  // Uniqueness is the whole safety argument. With two candidates the
+  // context would be what decides, and the context is what is wrong.
+  it("refuses when the changed line occurs more than once", () => {
+    const repeated = ["log();", "keep();", "log();"].join("\n");
+    const result = applyFileDiff(repeated, {
+      filePath: "a.js",
+      hunks: [
+        {
+          header: "@@ -1,2 +1,2 @@",
+          lines: [
+            { type: "context", content: "does not exist" },
+            { type: "remove", content: "log();" },
+            { type: "add", content: "warn();" },
+          ],
+        },
+      ],
+    }, { anchorWhenContextFails: true });
+    expect(result.ok).toBe(false);
+  });
+
+  /**
+   * The guarantee this nearly cost us.
+   *
+   * Wrong context and an edited file are the same diff. An earlier
+   * version of this anchored unconditionally and applied over a user's
+   * edit to the very line the hunk quoted — caught only because the
+   * existing no-clobber test failed. Anchoring is therefore off unless
+   * the caller can say the file is exactly what the agent read.
+   */
+  it("refuses to anchor by default, so an edited file is never clobbered", () => {
+    const edited = HTML.replace(
+      '<button onclick="countChickens()">Count Chickens</button>',
+      '<button onclick="countChickens()" class="mine">Count Chickens</button>'
+    );
+    const diff = {
+      filePath: "index.html",
+      hunks: [
+        {
+          header: "",
+          lines: [
+            { type: "context" as const, content: '<button onclick="countChickens()">Count Chickens</button>' },
+            { type: "remove" as const, content: "<h1>Chicken Counting App</h1>" },
+            { type: "add" as const, content: "<h1>Renamed</h1>" },
+          ],
+        },
+      ],
+    };
+
+    // The user's edit is to a context line, and the removed line is
+    // still unique — exactly the shape that anchoring would place.
+    expect(applyFileDiff(edited, diff).ok).toBe(false);
+    expect(applyFileDiff(edited, diff, { anchorWhenContextFails: true }).ok).toBe(true);
+  });
+
+  // A pure insertion has no changed line to anchor on, so the earlier
+  // failure — an add with no remove and a duplicated context line —
+  // must still be refused rather than placed somewhere plausible.
+  it("still refuses an insertion whose context does not match", () => {
+    const result = applyFileDiff(HTML, {
+      filePath: "index.html",
+      hunks: [
+        {
+          header: "@@ -1,4 +1,5 @@",
+          lines: [
+            { type: "context", content: "<h1>Chicken Counting App</h1>" },
+            { type: "context", content: '<p id="count"></p>' },
+            { type: "add", content: "<button>second</button>" },
+            { type: "context", content: '<p id="count"></p>' },
+          ],
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.conflict.reason).toBe("context-not-found");
+  });
+
+  // Anchoring is a fallback, never a shortcut: a hunk whose context does
+  // match must be placed by that context.
+  it("prefers a full context match over the anchor", () => {
+    const source = ["a();", "target();", "b();", "c();", "target();", "d();"].join("\n");
+    const result = applyFileDiff(source, {
+      filePath: "a.js",
+      hunks: [
+        {
+          header: "@@ -4,3 +4,3 @@",
+          lines: [
+            { type: "context", content: "c();" },
+            { type: "remove", content: "target();" },
+            { type: "add", content: "changed();" },
+            { type: "context", content: "d();" },
+          ],
+        },
+      ],
+    }, { anchorWhenContextFails: true });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The second occurrence is the one surrounded by c() and d().
+    expect(result.content).toBe(
+      ["a();", "target();", "b();", "c();", "changed();", "d();"].join("\n")
+    );
+  });
+});

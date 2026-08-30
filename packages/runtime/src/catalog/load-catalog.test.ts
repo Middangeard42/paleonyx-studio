@@ -98,3 +98,60 @@ describe("installed capabilities override bundled claims", () => {
     expect(catalog.installedIds).toHaveLength(0);
   });
 });
+
+/**
+ * Ollama's two endpoints disagree about the same build.
+ *
+ * The real case: a GGUF pulled from HuggingFace reported
+ * ["completion"] from /api/tags and ["tools","thinking","completion"]
+ * from /api/show. The listing does not analyse the chat template; the
+ * inspection does. Reading only the listing told the user that Ornith —
+ * the model this product recommends by default — could not run
+ * commands, and ran it single-pass.
+ */
+describe("tool support is read from the endpoint that knows", () => {
+  function ollama(tagCapabilities: string[], showCapabilities?: string[]) {
+    return vi.fn(async (url: string) => {
+      if (String(url).includes("/api/tags")) {
+        return new Response(
+          JSON.stringify({
+            models: [
+              {
+                name: "hf.co/x/Model-GGUF:Q4_K_M",
+                capabilities: tagCapabilities,
+                details: { parameter_size: "9B", context_length: 262144 },
+              },
+            ],
+          })
+        );
+      }
+      if (showCapabilities === undefined) {
+        return new Response(null, { status: 500 });
+      }
+      return new Response(JSON.stringify({ capabilities: showCapabilities }));
+    });
+  }
+
+  it("believes /api/show over /api/tags", async () => {
+    vi.stubGlobal("fetch", ollama(["completion"], ["tools", "thinking", "completion"]));
+    const catalog = await loadModelCatalog();
+    const entry = catalog.entries.find((e) => e.id === "hf.co/x/Model-GGUF:Q4_K_M");
+    expect(entry?.supportsToolCalling).toBe(true);
+  });
+
+  it("believes it in the other direction too", async () => {
+    vi.stubGlobal("fetch", ollama(["completion", "tools"], ["completion"]));
+    const catalog = await loadModelCatalog();
+    const entry = catalog.entries.find((e) => e.id === "hf.co/x/Model-GGUF:Q4_K_M");
+    expect(entry?.supportsToolCalling).toBe(false);
+  });
+
+  // Refinement may only add information. A failed inspection must leave
+  // the listing's answer alone rather than downgrading the model.
+  it("keeps what the listing said when the inspection fails", async () => {
+    vi.stubGlobal("fetch", ollama(["completion", "tools"], undefined));
+    const catalog = await loadModelCatalog();
+    const entry = catalog.entries.find((e) => e.id === "hf.co/x/Model-GGUF:Q4_K_M");
+    expect(entry?.supportsToolCalling).toBe(true);
+  });
+});

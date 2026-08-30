@@ -714,7 +714,14 @@ function Workspace({
         summary: target.plan.summary,
         diffs: target.diff,
       };
-      const outcome = await applyAgentChange(changeStore, record);
+      // Files still holding exactly what the agent read cannot have
+      // been edited by the user, which is what makes it safe to place a
+      // hunk whose context the model got wrong.
+      const outcome = await applyAgentChange(
+        changeStore,
+        record,
+        new Map(Object.entries(target.filesSeen ?? {}))
+      );
       if (outcome.ok) {
         setApplied(true);
         await reloadChangedFiles(target.diff.map((d) => d.filePath));
@@ -1094,7 +1101,9 @@ function Workspace({
       setBudgetUsage(taskResult.budgetUsage);
       // Checked against the files as they are right now, before the user
       // has had any chance to touch them.
-      setBornStale(isProposalStale(workspace, taskResult.diff));
+      setBornStale(
+        isProposalStale(workspace, taskResult.diff, taskResult.filesSeen)
+      );
 
       // Auto-apply skips the approval gate, nothing else: the plan and
       // diff above were still produced, and the change is still recorded
@@ -1124,7 +1133,7 @@ function Workspace({
    */
   const proposalStale = useMemo(() => {
     if (!result || applied) return false;
-    return isProposalStale(workspace, result.diff);
+    return isProposalStale(workspace, result.diff, result.filesSeen);
   }, [result, workspace, applied]);
 
   return (
@@ -1316,7 +1325,9 @@ function Workspace({
             stale={proposalStale}
             bornStale={bornStale}
             staleReason={
-              result ? proposalConflict(workspace, result.diff) : null
+              result
+                ? proposalConflict(workspace, result.diff, result.filesSeen)
+                : null
             }
             onRerun={handleRunTask}
             canProposeEdits={canProposeEdits(permissionMode)}
