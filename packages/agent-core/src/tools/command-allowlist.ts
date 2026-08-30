@@ -109,10 +109,38 @@ export function checkAllowlist(
     };
   }
 
+  // Reaching for `cat` when readFile is already offered is not a gap in
+  // the allowlist, so saying "add it in Settings" points at the wrong
+  // remedy — the agent has a better way and should use it.
+  if (looksLikeReadingAFile(request)) {
+    return {
+      allowed: false,
+      reason: `The model tried to read a file by running "${formatCommand(
+        request
+      )}". It already has a tool for that and does not need a command, so this is refused rather than something to permit.`,
+    };
+  }
+
   return {
     allowed: false,
     reason: `"${formatCommand(request)}" is not in this project's allowed commands.`,
   };
+}
+
+/** Programs whose whole job is printing a file the read tool can fetch. */
+const FILE_READING_PROGRAMS = new Set([
+  "cat",
+  "type",
+  "head",
+  "tail",
+  "less",
+  "more",
+  "bat",
+  "nl",
+]);
+
+function looksLikeReadingAFile(request: CommandRequest): boolean {
+  return FILE_READING_PROGRAMS.has(normalizeProgram(request.program));
 }
 
 /**

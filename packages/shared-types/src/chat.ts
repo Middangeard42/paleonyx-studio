@@ -9,6 +9,15 @@ export interface ChatMessage {
   content: string;
   /** Present when role === "tool": which tool call this message answers. */
   toolCallId?: string;
+  /**
+   * Present when role === "tool": the tool that produced it.
+   *
+   * Carried separately from the id because providers disagree about
+   * which one identifies a result — Ollama's chat API matches on
+   * `tool_name`, OpenAI-compatible ones on `tool_call_id`. Holding both
+   * lets each adapter send what its provider actually reads.
+   */
+  toolName?: string;
   /** Present when role === "assistant" and the model requested tool calls. */
   toolCalls?: ToolCall[];
 }

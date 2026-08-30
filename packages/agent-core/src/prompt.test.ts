@@ -145,3 +145,12 @@ describe("what the tool phase is for", () => {
     expect(prompt).not.toMatch(/finding things out/i);
   });
 });
+
+describe("tools versus commands", () => {
+  it("sends the model to the read tool rather than cat", () => {
+    const prompt = buildSystemPrompt("bug-fix", "experienced", true);
+    expect(prompt).toMatch(/call the read tool/i);
+    expect(prompt).toMatch(/do not run `cat`/i);
+    expect(prompt).toMatch(/what no tool covers/i);
+  });
+});

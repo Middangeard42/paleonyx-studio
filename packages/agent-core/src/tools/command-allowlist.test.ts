@@ -183,3 +183,31 @@ describe("refusing a command that tries to edit the project", () => {
     expect(decision.allowed).toBe(true);
   });
 });
+
+describe("refusing a command that duplicates a tool", () => {
+  const allowlist = ["npm test"];
+
+  // Observed live: the agent read index.html with the tool, twice, then
+  // ran `cat index.html`. Telling the user to allow `cat` would be the
+  // wrong remedy for an agent that already has readFile.
+  it("points at the read tool instead of the allowlist", () => {
+    const decision = checkAllowlist({ program: "cat", args: ["index.html"] }, allowlist);
+    expect(decision.allowed).toBe(false);
+    if (decision.allowed) return;
+    expect(decision.reason).toMatch(/already has a tool for that/i);
+    expect(decision.reason).not.toMatch(/add it in settings/i);
+  });
+
+  it("covers the usual ways of printing a file", () => {
+    for (const program of ["cat", "type", "head", "tail", "less", "more"]) {
+      const decision = checkAllowlist({ program, args: ["x.ts"] }, allowlist);
+      expect(decision.allowed, program).toBe(false);
+      if (decision.allowed) continue;
+      expect(decision.reason, program).toMatch(/already has a tool/i);
+    }
+  });
+
+  it("still permits a reading command the user explicitly allowed", () => {
+    expect(checkAllowlist({ program: "cat", args: ["x"] }, ["cat"]).allowed).toBe(true);
+  });
+});

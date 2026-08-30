@@ -38,6 +38,9 @@ interface OllamaMessage {
   role: string;
   content: string;
   tool_calls?: OllamaToolCall[];
+  /** Names which tool a `role: "tool"` message answers. */
+  tool_name?: string;
+  tool_call_id?: string;
 }
 
 interface OllamaChatResponse {
@@ -159,10 +162,40 @@ export async function pingOllama(baseUrl = DEFAULT_BASE_URL): Promise<boolean> {
   }
 }
 
+/**
+ * Converts one message, keeping the parts that link a tool call to its
+ * result.
+ *
+ * These were being dropped, and the loop suffered for it in a way that
+ * looked like the model behaving oddly. Sending an assistant turn
+ * without its `tool_calls` and then a bare `tool` message leaves the
+ * model with a result it has no record of asking for. Observed live:
+ * it read index.html, read it again, then tried to `cat` the file —
+ * exactly what something does when its requests appear to vanish.
+ */
 function toOllamaMessage(
   message: ChatCompletionRequest["messages"][number]
 ): OllamaMessage {
-  return { role: message.role, content: message.content };
+  const converted: OllamaMessage = {
+    role: message.role,
+    content: message.content,
+  };
+
+  if (message.toolCalls?.length) {
+    converted.tool_calls = message.toolCalls.map((call) => ({
+      function: { name: call.name, arguments: call.arguments },
+    }));
+  }
+
+  // Ollama matches a result to its call by tool name; the id is sent as
+  // well because some builds read that instead, and an unread field
+  // costs nothing.
+  if (message.role === "tool") {
+    if (message.toolName) converted.tool_name = message.toolName;
+    if (message.toolCallId) converted.tool_call_id = message.toolCallId;
+  }
+
+  return converted;
 }
 
 function toOllamaTools(request: ChatCompletionRequest) {

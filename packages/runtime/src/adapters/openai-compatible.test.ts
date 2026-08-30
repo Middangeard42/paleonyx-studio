@@ -259,3 +259,83 @@ describe("streaming", () => {
     expect(deltas.join("")).toBe("split");
   });
 });
+
+/**
+ * The same linkage, for the BYOK providers.
+ *
+ * Stricter here than for Ollama: an OpenAI-compatible API rejects a
+ * `tool` message whose `tool_call_id` matches no preceding call, so
+ * dropping it does not merely confuse the model — it fails the request.
+ */
+describe("tool calls and their results reach the wire intact", () => {
+  function capture() {
+    const sent: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        sent.push(JSON.parse(String(init?.body)));
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: "ok" } }] })
+        );
+      })
+    );
+    return sent;
+  }
+
+  const conversation = [
+    { role: "user" as const, content: "why" },
+    {
+      role: "assistant" as const,
+      content: "",
+      toolCalls: [{ id: "call_1", name: "readFile", arguments: { path: "a.ts" } }],
+    },
+    {
+      role: "tool" as const,
+      content: "contents",
+      toolCallId: "call_1",
+      toolName: "readFile",
+    },
+  ];
+
+  function adapter() {
+    return new OpenAiCompatibleAdapter({
+      provider: "openrouter",
+      baseUrl: "https://example.test/v1",
+      modelId: "m",
+      getApiKey: async () => "k",
+    });
+  }
+
+  it("sends tool_calls with arguments encoded as a JSON string", async () => {
+    const sent = capture();
+    await adapter().chat({ messages: conversation });
+
+    const messages = sent[0]!.messages as Record<string, unknown>[];
+    const calls = messages[1]!.tool_calls as Record<string, unknown>[];
+    expect(calls[0]).toMatchObject({ id: "call_1", type: "function" });
+    const fn = calls[0]!.function as Record<string, unknown>;
+    expect(fn.name).toBe("readFile");
+    // A string, not an object — the wire format differs from Ollama's.
+    expect(typeof fn.arguments).toBe("string");
+    expect(JSON.parse(String(fn.arguments))).toEqual({ path: "a.ts" });
+  });
+
+  it("sends tool_call_id on the result", async () => {
+    const sent = capture();
+    await adapter().chat({ messages: conversation });
+
+    const messages = sent[0]!.messages as Record<string, unknown>[];
+    expect(messages[2]).toMatchObject({
+      role: "tool",
+      content: "contents",
+      tool_call_id: "call_1",
+    });
+  });
+
+  it("adds nothing to a plain user message", async () => {
+    const sent = capture();
+    await adapter().chat({ messages: conversation });
+    const messages = sent[0]!.messages as Record<string, unknown>[];
+    expect(messages[0]).toEqual({ role: "user", content: "why" });
+  });
+});

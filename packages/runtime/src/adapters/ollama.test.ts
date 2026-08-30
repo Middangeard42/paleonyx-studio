@@ -159,3 +159,74 @@ describe("what must not be mistaken for a tool call", () => {
     expect(result.toolCalls).toBeUndefined();
   });
 });
+
+/**
+ * The link between a tool call and its result.
+ *
+ * This was dropped, and the loop behaved as you would expect something
+ * to behave when its requests vanish: it read index.html, read it
+ * again, then tried to `cat` the file. The tool result was arriving with
+ * no assistant turn claiming to have asked for it.
+ */
+describe("tool calls and their results reach the wire intact", () => {
+  function capture() {
+    const sent: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        sent.push(JSON.parse(String(init?.body)));
+        return new Response(
+          JSON.stringify({ message: { role: "assistant", content: "ok" }, done: true })
+        );
+      })
+    );
+    return sent;
+  }
+
+  const conversation = [
+    { role: "user" as const, content: "why is it broken" },
+    {
+      role: "assistant" as const,
+      content: "",
+      toolCalls: [
+        { id: "call_1", name: "readFile", arguments: { path: "index.html" } },
+      ],
+    },
+    {
+      role: "tool" as const,
+      content: "<html>…</html>",
+      toolCallId: "call_1",
+      toolName: "readFile",
+    },
+  ];
+
+  it("keeps tool_calls on the assistant turn", async () => {
+    const sent = capture();
+    await new OllamaAdapter({ modelId: "m" }).chat({ messages: conversation });
+
+    const messages = sent[0]!.messages as Record<string, unknown>[];
+    const assistant = messages[1]!;
+    expect(assistant.tool_calls).toEqual([
+      { function: { name: "readFile", arguments: { path: "index.html" } } },
+    ]);
+  });
+
+  it("names the tool on the result so Ollama can match it", async () => {
+    const sent = capture();
+    await new OllamaAdapter({ modelId: "m" }).chat({ messages: conversation });
+
+    const messages = sent[0]!.messages as Record<string, unknown>[];
+    const toolResult = messages[2]!;
+    expect(toolResult.role).toBe("tool");
+    expect(toolResult.tool_name).toBe("readFile");
+    expect(toolResult.content).toBe("<html>…</html>");
+  });
+
+  it("leaves ordinary messages unadorned", async () => {
+    const sent = capture();
+    await new OllamaAdapter({ modelId: "m" }).chat({ messages: conversation });
+
+    const messages = sent[0]!.messages as Record<string, unknown>[];
+    expect(messages[0]).toEqual({ role: "user", content: "why is it broken" });
+  });
+});

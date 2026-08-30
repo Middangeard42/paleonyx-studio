@@ -86,9 +86,30 @@ export class OpenAiCompatibleAdapter implements ChatModelProvider {
   private body(request: ChatCompletionRequest, stream: boolean) {
     return JSON.stringify({
       model: this.options.modelId,
+      // Tool calls and their results have to keep their linkage. Sent
+      // without it, the provider sees a result for a call the assistant
+      // never appears to have made — and OpenAI-compatible APIs reject
+      // a `tool` message whose `tool_call_id` matches nothing.
       messages: request.messages.map((message) => ({
         role: message.role,
         content: message.content,
+        ...(message.toolCalls?.length
+          ? {
+              tool_calls: message.toolCalls.map((call) => ({
+                id: call.id,
+                type: "function",
+                function: {
+                  name: call.name,
+                  // A JSON string here, not an object: the wire format
+                  // for arguments differs from Ollama's.
+                  arguments: JSON.stringify(call.arguments),
+                },
+              })),
+            }
+          : {}),
+        ...(message.role === "tool" && message.toolCallId
+          ? { tool_call_id: message.toolCallId }
+          : {}),
       })),
       tools: request.tools?.map((tool) => ({
         type: "function",

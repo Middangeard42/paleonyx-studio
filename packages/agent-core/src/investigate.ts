@@ -115,7 +115,12 @@ export async function investigate(
       options.budget.recordToolCall();
       const step = await runTool(call, options, commandsAvailable);
       steps.push(step);
-      messages.push({ role: "tool", content: step.detail, toolCallId: call.id });
+      messages.push({
+        role: "tool",
+        content: step.detail,
+        toolCallId: call.id,
+        toolName: call.name,
+      });
 
       // A refused command stops the loop rather than letting the model
       // try variations until something slips through the allowlist.

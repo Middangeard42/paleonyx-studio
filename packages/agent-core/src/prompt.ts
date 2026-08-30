@@ -203,6 +203,7 @@ const EDIT_SHAPE_INSTRUCTIONS = [
 const TOOL_PHASE_INSTRUCTIONS = [
   "Before answering, you may call the provided tools to gather what you need: read other files, or run an allowlisted command such as the test suite, and read its output.",
   "Prefer checking to guessing. If you need a file, read it rather than saying you would like to.",
+  "Use the provided tools for what they cover. To see a file, call the read tool — do not run `cat`, `type`, `head` or `less`; you already have its contents once you have read it, and reading it a second way tells you nothing new. Commands are for what no tool covers, such as running the test suite.",
   "Commands are for finding things out, never for changing them. Do not run `sed`, do not redirect output into a file, do not use any command that writes, moves, or deletes anything — not even to make the change you were asked for. A change made that way never reaches the diff, so the user never sees it, it is not recorded, and it cannot be undone. Every change you want goes in `diff` and nowhere else.",
   "A tool may fail: a file may not exist, a command may not be permitted. That is information. Report what you actually found rather than assuming the thing you expected is there.",
   "When you have enough to answer, stop calling tools and reply with the JSON block described below.",
