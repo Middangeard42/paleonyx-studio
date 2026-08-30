@@ -122,15 +122,26 @@ export async function investigate(
         toolName: call.name,
       });
 
-      // A refused command stops the loop rather than letting the model
-      // try variations until something slips through the allowlist.
+      /**
+       * A refused command ends the gathering phase, but not the task.
+       *
+       * The guard is against probing: left running, a model could try
+       * variations until one happened to match the allowlist. Stopping
+       * here achieves that — no further command can be run — while
+       * still answering from what was already gathered.
+       *
+       * Aborting outright was throwing away work for nothing. Observed:
+       * the agent read the file it needed, then guessed at `npm run
+       * preview`, and the whole task died on the guess despite having
+       * everything required to answer.
+       */
       if (!step.ok && step.tool === RUN_COMMAND_TOOL_NAME) {
-        return {
-          kind: "blocked",
-          reason: "permission-denied",
-          message: step.summary,
-          steps,
-        };
+        messages.push({
+          role: "user",
+          content:
+            "That command was refused, and no further commands will be run for this task. Answer now using what you have already gathered. If the refusal genuinely prevents you from answering, say so in `explanation` rather than guessing.",
+        });
+        return { kind: "ready", messages, steps };
       }
     }
   }

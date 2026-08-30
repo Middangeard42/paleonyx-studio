@@ -90,6 +90,7 @@ const SCAFFOLD_INSTRUCTIONS = [
  */
 const DESIGN_CHANGE_INSTRUCTIONS = [
   "Task type: Design Change. The user is looking at their project running, has clicked one element on the page, and described how they want it to change.",
+  "The page is already running in front of the user, and it reloads by itself the moment your change is applied. You do not need to build it, serve it, start a dev server, or open it to check the result — they will see it. Do not run a command to preview or verify your own change.",
   "Change only that element. Leave everything else on the page exactly as it is, including elements that look like it — a request about one button is not a request about every button.",
   "Prefer the smallest edit that achieves it. Restructuring the page to make a colour change is not the change that was asked for.",
   "If what they asked for is ambiguous about the element you found, say what you assumed in `explanation` rather than picking silently.",
@@ -205,7 +206,8 @@ const TOOL_PHASE_INSTRUCTIONS = [
   "Prefer checking to guessing. If you need a file, read it rather than saying you would like to.",
   "Use the provided tools for what they cover. To see a file, call the read tool — do not run `cat`, `type`, `head` or `less`; you already have its contents once you have read it, and reading it a second way tells you nothing new. Commands are for what no tool covers, such as running the test suite.",
   "Commands are for finding things out, never for changing them. Do not run `sed`, do not redirect output into a file, do not use any command that writes, moves, or deletes anything — not even to make the change you were asked for. A change made that way never reaches the diff, so the user never sees it, it is not recorded, and it cannot be undone. Every change you want goes in `diff` and nowhere else.",
-  "A tool may fail: a file may not exist, a command may not be permitted. That is information. Report what you actually found rather than assuming the thing you expected is there.",
+  "Only run a command you know this project has. The file listing and its package manifest tell you what exists; a guessed script name such as `npm run preview` is not a check, it is a coin flip that spends your one attempt.",
+  "A tool may fail: a file may not exist, a command may not be permitted. That is information. Report what you actually found rather than assuming the thing you expected is there. A refusal ends the gathering phase, so answer with what you have rather than trying another way in.",
   "When you have enough to answer, stop calling tools and reply with the JSON block described below.",
 ].join(" ");
 

@@ -215,9 +215,10 @@ describe("running commands", () => {
     expect(outcome.steps[0]?.detail).toContain("exited with code 1");
   });
 
-  it("refuses a command outside the allowlist and stops", async () => {
-    // Stopping matters: left running, a model could try variations until
-    // one happened to match.
+  it("refuses a command outside the allowlist and runs nothing further", async () => {
+    // The guard is against probing: left running, a model could try
+    // variations until one happened to match. What must hold is that
+    // the command never runs and no second one is attempted.
     const runCommand = vi.fn();
     const provider = new ScriptedProvider([
       {
@@ -227,15 +228,54 @@ describe("running commands", () => {
         ],
         finishReason: "tool_calls",
       },
+      {
+        content: "",
+        toolCalls: [
+          { id: "2", name: "runCommand", arguments: { program: "rm", args: ["-rf", "/"] } },
+        ],
+        finishReason: "tool_calls",
+      },
     ]);
 
     const outcome = await run(provider, { runCommand });
     expect(runCommand).not.toHaveBeenCalled();
-    expect(outcome.kind).toBe("blocked");
-    if (outcome.kind === "blocked") {
-      expect(outcome.reason).toBe("permission-denied");
-      expect(outcome.message).toContain("rm -rf .");
-    }
+    // Gathering ends here, so the second attempt is never even asked for.
+    expect(outcome.steps).toHaveLength(1);
+    expect(outcome.steps[0]?.ok).toBe(false);
+    expect(outcome.steps[0]?.summary).toContain("rm -rf .");
+  });
+
+  /**
+   * A refusal ends gathering without abandoning the task.
+   *
+   * Observed: the agent read the file it needed, guessed at `npm run
+   * preview`, and the whole run died on the guess — despite already
+   * holding everything required to answer.
+   */
+  it("still answers from what it gathered before the refusal", async () => {
+    const runCommand = vi.fn();
+    const provider = new ScriptedProvider([
+      {
+        content: "",
+        toolCalls: [{ id: "1", name: "readFile", arguments: { path: "index.html" } }],
+        finishReason: "tool_calls",
+      },
+      {
+        content: "",
+        toolCalls: [
+          { id: "2", name: "runCommand", arguments: { program: "npm", args: ["run", "preview"] } },
+        ],
+        finishReason: "tool_calls",
+      },
+    ]);
+
+    const outcome = await run(provider, { runCommand });
+    expect(outcome.kind).toBe("ready");
+    if (outcome.kind !== "ready") return;
+    // The read survives, and the model is told to answer with it.
+    expect(outcome.steps[0]?.ok).toBe(true);
+    expect(outcome.steps[1]?.ok).toBe(false);
+    expect(outcome.messages.at(-1)?.content).toMatch(/no further commands will be run/i);
   });
 
   it("refuses commands when the permission mode forbids them", async () => {
@@ -244,7 +284,9 @@ describe("running commands", () => {
 
     const outcome = await run(provider, { runCommand, permissionMode: "auto-apply" });
     expect(runCommand).not.toHaveBeenCalled();
-    expect(outcome.kind).toBe("blocked");
+    // Gathering ends; the refusal is recorded and the task still answers.
+    expect(outcome.steps.at(-1)?.ok).toBe(false);
+    expect(outcome.kind).toBe("ready");
   });
 
   it("refuses commands when the host cannot run processes at all", async () => {
@@ -252,7 +294,9 @@ describe("running commands", () => {
     // mode that forbids it, and it must not silently appear to succeed.
     const provider = new ScriptedProvider([wantsCargoTest]);
     const outcome = await run(provider, { permissionMode: "can-run-commands" });
-    expect(outcome.kind).toBe("blocked");
+    expect(outcome.steps.at(-1)?.ok).toBe(false);
+    expect(outcome.steps.at(-1)?.summary).toMatch(/not enabled/i);
+    expect(outcome.kind).toBe("ready");
   });
 
   it("rejects a malformed command request instead of guessing", async () => {
@@ -269,7 +313,8 @@ describe("running commands", () => {
 
     const outcome = await run(provider, { runCommand });
     expect(runCommand).not.toHaveBeenCalled();
-    expect(outcome.kind).toBe("blocked");
+    expect(outcome.steps.at(-1)?.ok).toBe(false);
+    expect(outcome.kind).toBe("ready");
   });
 
   it("does not offer the command tool when it cannot be used", async () => {

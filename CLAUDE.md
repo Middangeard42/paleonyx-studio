@@ -324,8 +324,13 @@ product's core trust promise breaks.
     `npm` permits `npm run` of any script. `cargo test` permits running
     the tests, and `cargo test --lib x` because that only narrows the
     same operation.
-  - **A refused command stops the loop.** Left running, a model could try
-    variations until one happened to match.
+  - **A refused command ends the gathering phase.** Left running, a
+    model could try variations until one happened to match, so no
+    further command runs for that task. It does not abandon the task:
+    the refusal is recorded, and the agent answers from what it already
+    gathered. Aborting outright threw away work for nothing — a model
+    that had read everything it needed lost the run to one wrong guess
+    at a script name.
   This reduces what a model can reach for; it is not a sandbox. A user
   who adds a broad entry gets broad behaviour, and the UI says so rather
   than implying the list makes command execution safe.
