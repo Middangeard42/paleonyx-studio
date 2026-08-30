@@ -123,3 +123,25 @@ describe("buildSystemPrompt for the code-change task types", () => {
     expect(new Set(prompts).size).toBe(prompts.length);
   });
 });
+
+describe("what the tool phase is for", () => {
+  // The model ran `sed -i` on the user's file instead of proposing a
+  // diff. Nothing in the prompt had said commands are for reading.
+  it("forbids using commands to change files", () => {
+    const prompt = buildSystemPrompt("bug-fix", "experienced", true);
+    expect(prompt).toMatch(/finding things out, never for changing them/i);
+    expect(prompt).toMatch(/sed/);
+    expect(prompt).toMatch(/goes in `diff` and nowhere else/i);
+  });
+
+  it("says why, not just that", () => {
+    const prompt = buildSystemPrompt("bug-fix", "experienced", true);
+    expect(prompt).toMatch(/never reaches the diff/i);
+    expect(prompt).toMatch(/cannot be undone/i);
+  });
+
+  it("says none of it when no tools are offered", () => {
+    const prompt = buildSystemPrompt("bug-fix", "experienced", false);
+    expect(prompt).not.toMatch(/finding things out/i);
+  });
+});

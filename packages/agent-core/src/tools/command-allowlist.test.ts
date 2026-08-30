@@ -120,3 +120,66 @@ describe("empty and malformed input", () => {
     if (!decision.allowed) expect(decision.reason).toContain("cargo publish");
   });
 });
+
+/**
+ * Commands that were trying to edit the project.
+ *
+ * Observed once Ornith gained tool calling: asked to enlarge a font, it
+ * ran `sed -i` on index.html instead of proposing a diff. The allowlist
+ * refused it, but said only that it was not permitted — which reads as a
+ * list needing widening, when the real answer is that a change made by
+ * command skips review, history, and undo entirely.
+ */
+describe("refusing a command that tries to edit the project", () => {
+  const allowlist = ["npm test", "cargo test"];
+
+  it("explains that edits belong in a diff, not a command", () => {
+    const decision = checkAllowlist(
+      { program: "sed", args: ["-i", "s/a/b/", "index.html"] },
+      allowlist
+    );
+    expect(decision.allowed).toBe(false);
+    if (decision.allowed) return;
+    expect(decision.reason).toMatch(/skip the diff/i);
+    expect(decision.reason).toMatch(/could not be undone/i);
+    expect(decision.reason).toMatch(/propose the change instead/i);
+  });
+
+  it("recognises an in-place flag on any program", () => {
+    const decision = checkAllowlist(
+      { program: "perl", args: ["-i", "-pe", "s/a/b/", "x.txt"] },
+      allowlist
+    );
+    expect(decision.allowed).toBe(false);
+    if (decision.allowed) return;
+    expect(decision.reason).toMatch(/tried to edit your files/i);
+  });
+
+  it("recognises programs that exist to move or remove things", () => {
+    for (const program of ["rm", "mv", "cp", "truncate", "tee"]) {
+      const decision = checkAllowlist({ program, args: ["x"] }, allowlist);
+      expect(decision.allowed, program).toBe(false);
+      if (decision.allowed) continue;
+      expect(decision.reason, program).toMatch(/tried to edit your files/i);
+    }
+  });
+
+  // A refusal that is merely not on the list keeps the plainer wording.
+  it("keeps the ordinary message for a command that only reads", () => {
+    const decision = checkAllowlist({ program: "curl", args: ["example.com"] }, allowlist);
+    expect(decision.allowed).toBe(false);
+    if (decision.allowed) return;
+    expect(decision.reason).toMatch(/not in this project's allowed commands/i);
+    expect(decision.reason).not.toMatch(/tried to edit/i);
+  });
+
+  // Recognition must not become permission: this is about wording only,
+  // and an allowed command stays allowed (CLAUDE.md §6).
+  it("does not refuse an editing-looking command that the user permitted", () => {
+    const decision = checkAllowlist(
+      { program: "sed", args: ["-i", "s/a/b/", "x.txt"] },
+      ["sed -i"]
+    );
+    expect(decision.allowed).toBe(true);
+  });
+});

@@ -96,10 +96,54 @@ export function checkAllowlist(
     }
   }
 
+  // A refused command that was trying to edit the project is worth
+  // naming as such. "Not in the allowed commands" is true but reads as
+  // a list that needs widening, when the right answer is that changes
+  // belong in a reviewable diff and never in a command at all.
+  if (looksLikeAnEdit(request)) {
+    return {
+      allowed: false,
+      reason: `The model tried to edit your files by running "${formatCommand(
+        request
+      )}". That is refused whatever the allowlist says: a change made by command would skip the diff, leave no history, and could not be undone. It should propose the change instead.`,
+    };
+  }
+
   return {
     allowed: false,
     reason: `"${formatCommand(request)}" is not in this project's allowed commands.`,
   };
+}
+
+/**
+ * Whether a command was an attempt to modify the project.
+ *
+ * Recognition only — the command is refused either way, and this picks
+ * which explanation is true. Deliberately not a security boundary: the
+ * allowlist is what refuses, and a user who permits `sed` gets `sed`
+ * (CLAUDE.md §6). Observed after Ornith gained tool calling and reached
+ * for `sed -i` to restyle a button rather than proposing a diff.
+ */
+const EDITING_PROGRAMS = new Set([
+  "sed",
+  "tee",
+  "truncate",
+  "dd",
+  "patch",
+  "install",
+  "rm",
+  "mv",
+  "cp",
+  "touch",
+  "chmod",
+  "mkdir",
+]);
+
+function looksLikeAnEdit(request: CommandRequest): boolean {
+  const program = normalizeProgram(request.program);
+  if (EDITING_PROGRAMS.has(program)) return true;
+  // In-place flags are the giveaway for editors that also read.
+  return request.args.some((arg) => arg === "-i" || arg.startsWith("--in-place"));
 }
 
 export function formatCommand(request: CommandRequest): string {
