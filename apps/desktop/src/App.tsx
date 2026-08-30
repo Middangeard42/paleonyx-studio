@@ -29,6 +29,7 @@ import {
   closeBuffer,
   editBuffer,
   isProposalStale,
+  proposalConflict,
   markSaved,
   openBuffer,
   refreshAfterWrite,
@@ -1314,6 +1315,9 @@ function Workspace({
             applyError={applyError}
             stale={proposalStale}
             bornStale={bornStale}
+            staleReason={
+              result ? proposalConflict(workspace, result.diff) : null
+            }
             onRerun={handleRunTask}
             canProposeEdits={canProposeEdits(permissionMode)}
             projectDocs={contextDocs.map((doc) => ({

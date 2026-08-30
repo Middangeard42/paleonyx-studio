@@ -617,3 +617,85 @@ describe("hunks whose indentation does not match the file", () => {
     expect(reverted.content).toBe(HTML);
   });
 });
+
+/**
+ * Why a change could not be placed.
+ *
+ * The real failure that prompted this: asked to enlarge a button, the
+ * model wrote an `add` with no `remove` and used a context line twice
+ * that occurs once in the file. The message said only "doesn't match
+ * your files", which is true of both that and a dozen other causes.
+ */
+describe("explaining a failure to place a change", () => {
+  const HTML = [
+    "<h1>Chicken Counting App</h1>",
+    '<button onclick="countChickens()">Count Chickens</button>',
+    '<p id="count"></p>',
+  ].join("\n");
+
+  it("names a line the model quoted that is not in the file", () => {
+    const result = applyFileDiff(HTML, {
+      filePath: "index.html",
+      hunks: [
+        {
+          header: "@@ -1,2 +1,2 @@",
+          lines: [
+            { type: "context", content: "<h1>Chicken Counting App</h1>" },
+            { type: "remove", content: "<button>Count Ducks</button>" },
+            { type: "add", content: "<button>Count Geese</button>" },
+          ],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.conflict.message).toContain("Count Ducks");
+    expect(result.conflict.message).toMatch(/expected to find this line/i);
+  });
+
+  // The exact shape of the observed failure: a context line repeated
+  // that appears once, so every line exists but the run does not.
+  it("distinguishes a repeated or reordered line from a missing one", () => {
+    const result = applyFileDiff(HTML, {
+      filePath: "index.html",
+      hunks: [
+        {
+          header: "@@ -1,4 +1,5 @@",
+          lines: [
+            { type: "context", content: "<h1>Chicken Counting App</h1>" },
+            { type: "context", content: '<button onclick="countChickens()">Count Chickens</button>' },
+            { type: "context", content: '<p id="count"></p>' },
+            { type: "add", content: "<button>new</button>" },
+            { type: "context", content: '<p id="count"></p>' },
+          ],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.conflict.message).toMatch(/not together in that order/i);
+    expect(result.conflict.message).toMatch(/repeated or reordered/i);
+  });
+
+  it("keeps the message short when the offending line is enormous", () => {
+    const long = "x".repeat(500);
+    const result = applyFileDiff(HTML, {
+      filePath: "index.html",
+      hunks: [
+        {
+          header: "",
+          lines: [
+            { type: "remove", content: long },
+            { type: "add", content: "y" },
+          ],
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.conflict.message.length).toBeLessThan(200);
+    expect(result.conflict.message).toContain("…");
+  });
+});

@@ -132,10 +132,27 @@ export function isProposalStale(
   state: WorkspaceFiles,
   diffs: readonly FileDiff[]
 ): boolean {
-  if (diffs.length === 0) return false;
-  return diffs.some((diff) => {
+  return proposalConflict(state, diffs) !== null;
+}
+
+/**
+ * Why a proposal will not apply, or null when it will.
+ *
+ * The same check as `isProposalStale`, keeping the reason instead of
+ * discarding it. "This can't be applied" is true of every failure and
+ * distinguishes none of them; the panel needs to say which line the
+ * change expected and could not find, because that is what tells the
+ * user whether the model misread the file or they edited it themselves.
+ */
+export function proposalConflict(
+  state: WorkspaceFiles,
+  diffs: readonly FileDiff[]
+): string | null {
+  for (const diff of diffs) {
     const content = state.contents[diff.filePath];
-    if (content === undefined) return false;
-    return !applyFileDiff(content, diff).ok;
-  });
+    if (content === undefined) continue;
+    const result = applyFileDiff(content, diff);
+    if (!result.ok) return result.conflict.message;
+  }
+  return null;
 }

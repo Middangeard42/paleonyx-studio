@@ -133,6 +133,37 @@ export function locate(
 }
 
 /**
+ * Says why a hunk could not be placed, in terms of the file.
+ *
+ * "Doesn't match your files" is true and tells nobody anything. The two
+ * failures underneath it are quite different — a line the model quoted
+ * that is not in the file at all, versus lines that all exist but not
+ * next to each other — and the second is what a duplicated or reordered
+ * context line looks like. Naming which one happened is the difference
+ * between a mystery and something the user can act on.
+ */
+export function describeMismatch(
+  haystack: readonly string[],
+  needle: readonly string[]
+): string {
+  const present = new Set(haystack.map((line) => line.trim()));
+  const missing = needle.find((line) => !present.has(line.trim()));
+
+  if (missing !== undefined) {
+    const shown = missing.trim();
+    return shown === ""
+      ? "It expected a blank line that isn't there."
+      : `It expected to find this line, which isn't in the file: ${truncate(shown)}`;
+  }
+
+  return "Every line it quoted is in the file, but not together in that order — it probably repeated or reordered one of them.";
+}
+
+function truncate(line: string, limit = 80): string {
+  return line.length <= limit ? line : `${line.slice(0, limit)}…`;
+}
+
+/**
  * Builds what replaces the matched region, given the file's own text for
  * it.
  *

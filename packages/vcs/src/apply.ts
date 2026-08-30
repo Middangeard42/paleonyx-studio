@@ -6,6 +6,7 @@ import {
   locate,
   parseHunkStartLine,
   buildReplacement,
+  describeMismatch,
 } from "./hunk.js";
 
 export type ConflictReason = "context-not-found" | "ambiguous-location";
@@ -75,7 +76,7 @@ function patch(content: string, diff: FileDiff, mode: "apply" | "revert"): Patch
           hunkIndex,
           message:
             mode === "apply"
-              ? `${diff.filePath} no longer matches what this change expected, so it can't be applied safely.`
+              ? `${diff.filePath} doesn't match what this change expected. ${describeMismatch(lines, search)}`
               : `${diff.filePath} has been edited since this change was applied, so undoing it would overwrite that edit.`,
         },
       };

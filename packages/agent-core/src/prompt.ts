@@ -166,6 +166,30 @@ const TASK_TYPE_INSTRUCTIONS: Record<AgentTaskType, string> = {
 const NEW_FILE_INSTRUCTIONS =
   "To add a file that does not exist yet, give its path as `filePath` and a single hunk whose lines are all `add`. Do not write `context` or `remove` lines for a file that is not there — there is nothing for them to match.";
 
+/**
+ * The shape of a hunk that edits a file that already exists.
+ *
+ * Written after watching a correct piece of reasoning produce an
+ * unusable diff. Asked to enlarge a button, the model found the right
+ * line, computed the right size, and then expressed the substitution as
+ * an `add` with no `remove` — and repeated a context line that occurs
+ * once in the file. The search sequence it described therefore did not
+ * exist, and the change was refused.
+ *
+ * The rules are stated as an example because that is the form the
+ * mistake takes: the intent was right and the encoding was wrong, and a
+ * worked example is a better corrective than a description of one.
+ */
+const EDIT_SHAPE_INSTRUCTIONS = [
+  "How to write a hunk that changes a file that already exists:",
+  "To change a line, emit a `remove` line holding the file's current text and an `add` line holding the replacement. An `add` on its own inserts a new line and leaves the old one in place — if you meant to change something and wrote only `add`, the file ends up with both versions.",
+  "`context` and `remove` lines together must reproduce an unbroken run of consecutive lines from the file, copied as they actually appear and in the order they appear. Do not repeat a line that occurs once, do not reorder them, and do not include a line you have not actually seen in the file.",
+  "Two or three context lines are plenty. More is not safer — every extra line is another chance to misquote the file, and one wrong character means the change cannot be placed at all.",
+  "For example, changing `<button id='go'>Go</button>` to add a style, where the button sits between a heading and a paragraph:",
+  '{"header": "@@ -9,3 +9,3 @@", "lines": [{"type": "context", "content": "<h1>Title</h1>"}, {"type": "remove", "content": "<button id=\'go\'>Go</button>"}, {"type": "add", "content": "<button id=\'go\' style=\'width:220px\'>Go</button>"}, {"type": "context", "content": "<p>After</p>"}]}',
+  "Note what that does and does not do: one `remove` paired with one `add`, each context line appearing exactly once, and nothing quoted that is not in the file.",
+].join(" ");
+
 
 /**
  * Instructions for the phase before the answer.
@@ -191,7 +215,9 @@ export function buildSystemPrompt(
   return [
     "You are the planning/response engine for Paleonyx Studio, a local-first AI IDE. You never write files directly — you only ever propose plans, explanations, and diffs for the user to review.",
     TASK_TYPE_INSTRUCTIONS[taskType],
-    ...(taskProducesEdits(taskType) ? [NEW_FILE_INSTRUCTIONS] : []),
+    ...(taskProducesEdits(taskType)
+      ? [NEW_FILE_INSTRUCTIONS, EDIT_SHAPE_INSTRUCTIONS]
+      : []),
     SKILL_LEVEL_INSTRUCTIONS[skillLevel],
     EXPLANATION_SCOPE,
     ...(toolsAvailable ? [TOOL_PHASE_INSTRUCTIONS] : []),

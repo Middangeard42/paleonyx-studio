@@ -50,6 +50,8 @@ export interface AgentPanelProps {
    * a mistake of their own that does not exist.
    */
   bornStale?: boolean;
+  /** Which line the change expected and could not find, when known. */
+  staleReason?: string | null;
   /** Re-runs the same task against the current files. */
   onRerun?: () => void;
   /** False under read-only; disables task types that require a diff. */
@@ -142,6 +144,7 @@ export function AgentPanel(props: AgentPanelProps) {
                     error={props.applyError ?? null}
                     stale={props.stale ?? false}
                     bornStale={props.bornStale ?? false}
+                    staleReason={props.staleReason ?? null}
                     onRerun={props.onRerun}
                   />
                 )}
@@ -168,6 +171,7 @@ function ApplyGate({
   error,
   stale,
   bornStale,
+  staleReason,
   onRerun,
 }: {
   onApply: () => void;
@@ -176,6 +180,7 @@ function ApplyGate({
   error: string | null;
   stale: boolean;
   bornStale: boolean;
+  staleReason: string | null;
   onRerun?: () => void;
 }) {
   if (applied) {
@@ -196,7 +201,9 @@ function ApplyGate({
       <div className="flex flex-col gap-2 rounded-md border border-status-warning/40 bg-status-warning/10 p-2.5">
         <p className="text-xs text-text-secondary">
           {bornStale
-            ? "This suggestion doesn't match what's actually in your files, so it can't be applied. The model likely misread them — trying again, or using a larger model, usually helps."
+            ? staleReason
+              ? `This suggestion doesn't fit your files, so it can't be applied. ${staleReason} Trying again, or using a larger model, usually helps.`
+              : "This suggestion doesn't match what's actually in your files, so it can't be applied. The model likely misread them — trying again, or using a larger model, usually helps."
             : "You've edited these files since this was suggested, so it no longer fits. Your changes are untouched — this suggestion is just out of date now."}
         </p>
         {onRerun && (
