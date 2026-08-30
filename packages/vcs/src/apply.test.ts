@@ -394,3 +394,226 @@ describe("creating files", () => {
     expect(undone.deleted.has("src/sum.test.ts")).toBe(true);
   });
 });
+
+/**
+ * Indentation the model got wrong.
+ *
+ * The bug this fixes: a design change to a button nested at eight spaces
+ * inside <body> was refused as "doesn't match your files" every time.
+ * The model had found the right line and reproduced its content
+ * correctly, then written it back at its own idea of indentation, and an
+ * exact comparison cannot tell that apart from the file having changed.
+ */
+describe("hunks whose indentation does not match the file", () => {
+  const HTML = [
+    "<html>",
+    "  <body>",
+    "    <h1>Chicken Counting App</h1>",
+    '    <button onclick="countChickens()">Count Chickens</button>',
+    "  </body>",
+    "</html>",
+  ].join("\n");
+
+  it("applies a hunk written at the wrong indentation", () => {
+    const result = applyFileDiff(HTML, {
+      filePath: "index.html",
+      hunks: [
+        {
+          header: "@@ -4,1 +4,1 @@",
+          lines: [
+            // The model dropped the leading spaces.
+            { type: "remove", content: '<button onclick="countChickens()">Count Chickens</button>' },
+            {
+              type: "add",
+              content:
+                '<button onclick="countChickens()" style="width:220px;height:42px">Count Chickens</button>',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Landed at the file's depth, not the hunk's.
+    expect(result.content).toContain(
+      '    <button onclick="countChickens()" style="width:220px;height:42px">Count Chickens</button>'
+    );
+    expect(result.content).not.toContain(
+      '\n<button onclick="countChickens()" style'
+    );
+  });
+
+  it("keeps the file's own spacing on context lines", () => {
+    const result = applyFileDiff(HTML, {
+      filePath: "index.html",
+      hunks: [
+        {
+          header: "@@ -3,2 +3,3 @@",
+          lines: [
+            { type: "context", content: "<h1>Chicken Counting App</h1>" },
+            { type: "add", content: "<p>How many?</p>" },
+            { type: "context", content: '<button onclick="countChickens()">Count Chickens</button>' },
+          ],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Untouched lines come back exactly as the file had them.
+    expect(result.content).toContain("    <h1>Chicken Counting App</h1>");
+    expect(result.content).toContain("    <p>How many?</p>");
+  });
+
+  /**
+   * Exact-first has to change the outcome, not just the code path.
+   *
+   * The test below this one passes even against a matcher that searches
+   * loosely first, because its hint lands on the same line either way.
+   * Here the hint sits on the loose-only candidate: searching loosely
+   * first picks the wrong line, and only preferring the exact match
+   * gets it right.
+   */
+  it("prefers an exact match over a nearer loose one", () => {
+    const source = ["  x();", "x();"].join("\n");
+    const result = applyFileDiff(source, {
+      filePath: "a.js",
+      hunks: [
+        {
+          // Hint points at line 1 — the indented, loose-only candidate.
+          header: "@@ -1,1 +1,1 @@",
+          lines: [
+            { type: "remove", content: "x();" },
+            { type: "add", content: "y();" },
+          ],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The indented line is untouched; the exact one was replaced.
+    expect(result.content).toBe(["  x();", "y();"].join("\n"));
+  });
+
+  // The whole point of exact-first: a faithful hunk must never be
+  // affected by the fallback existing.
+  it("still prefers an exact match when one exists", () => {
+    const source = ["if (a) {", "  x();", "}", "", "if (b) {", "x();", "}"].join("\n");
+    const result = applyFileDiff(source, {
+      filePath: "a.js",
+      hunks: [
+        {
+          header: "@@ -6,1 +6,1 @@",
+          lines: [
+            { type: "remove", content: "x();" },
+            { type: "add", content: "y();" },
+          ],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The unindented `x();` is the exact match; the indented one is left.
+    expect(result.content).toContain("  x();");
+    expect(result.content).toContain("y();");
+  });
+
+  // A near-miss on content is still the file having changed, and must
+  // still be refused. Loosening whitespace must not loosen this.
+  it("still refuses when the content itself differs", () => {
+    const result = applyFileDiff(HTML, {
+      filePath: "index.html",
+      hunks: [
+        {
+          header: "@@ -4,1 +4,1 @@",
+          lines: [
+            { type: "remove", content: '<button onclick="countDucks()">Count Ducks</button>' },
+            { type: "add", content: "<button>changed</button>" },
+          ],
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.conflict.reason).toBe("context-not-found");
+  });
+
+  it("refuses when the loose match is ambiguous", () => {
+    const source = ["  go();", "", "    go();"].join("\n");
+    const result = applyFileDiff(source, {
+      filePath: "a.js",
+      hunks: [
+        {
+          header: "",
+          lines: [
+            { type: "remove", content: "go();" },
+            { type: "add", content: "stop();" },
+          ],
+        },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.conflict.reason).toBe("ambiguous-location");
+  });
+
+  it("shifts a multi-line hunk while preserving nesting inside it", () => {
+    const python = ["class Thing:", "    def go(self):", "        return 1"].join("\n");
+    const result = applyFileDiff(python, {
+      filePath: "a.py",
+      hunks: [
+        {
+          header: "@@ -2,2 +2,3 @@",
+          lines: [
+            // Model wrote the method at zero indent, body at four.
+            { type: "context", content: "def go(self):" },
+            { type: "add", content: "    log()" },
+            { type: "remove", content: "    return 1" },
+            { type: "add", content: "    return 2" },
+          ],
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Both added lines land four deeper than the method, as written.
+    expect(result.content).toContain("    def go(self):");
+    expect(result.content).toContain("        log()");
+    expect(result.content).toContain("        return 2");
+  });
+
+  it("reverts a loosely-matched change back to the original", () => {
+    const applied = applyFileDiff(HTML, {
+      filePath: "index.html",
+      hunks: [
+        {
+          header: "@@ -4,1 +4,1 @@",
+          lines: [
+            { type: "remove", content: '<button onclick="countChickens()">Count Chickens</button>' },
+            { type: "add", content: '<button onclick="countChickens()">Count them</button>' },
+          ],
+        },
+      ],
+    });
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+
+    const reverted = revertFileDiff(applied.content, {
+      filePath: "index.html",
+      hunks: [
+        {
+          header: "@@ -4,1 +4,1 @@",
+          lines: [
+            { type: "remove", content: '<button onclick="countChickens()">Count Chickens</button>' },
+            { type: "add", content: '<button onclick="countChickens()">Count them</button>' },
+          ],
+        },
+      ],
+    });
+    expect(reverted.ok).toBe(true);
+    if (!reverted.ok) return;
+    expect(reverted.content).toBe(HTML);
+  });
+});

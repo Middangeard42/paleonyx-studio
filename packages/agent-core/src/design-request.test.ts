@@ -29,8 +29,9 @@ describe("composeDesignRequest", () => {
 
   it("rounds the measured size rather than emitting sub-pixel noise", () => {
     const request = composeDesignRequest(selection(), "resize it");
-    expect(request).toContain("140 by 36 pixels");
+    expect(request).toContain("140 pixels wide by 36 pixels tall");
     expect(request).not.toContain("140.4");
+    expect(request).not.toContain("36.2");
   });
 
   it("omits facts the element does not have", () => {
@@ -116,5 +117,29 @@ describe("isSelectionLocatable", () => {
         })
       )
     ).toBe(true);
+  });
+});
+
+/**
+ * Relative size requests.
+ *
+ * Asked to make a button "2x larger", the agent read the stylesheet,
+ * found no width or height, and invented 220x42 — a size the button
+ * never had. The rendered size was already being measured and sent; the
+ * prompt just never said it was the answer to that question.
+ */
+describe("a size request with nothing in the stylesheet", () => {
+  it("presents the measurement as the element's current size", () => {
+    const request = composeDesignRequest(selection(), "make it 2x larger");
+    expect(request).toMatch(/current size on screen/i);
+    expect(request).toContain("140 pixels wide by 36 pixels tall");
+  });
+
+  it("tells the agent to compute from it rather than invent a starting point", () => {
+    const request = composeDesignRequest(selection(), "make it 2x larger");
+    expect(request).toMatch(/work it out from the measured size/i);
+    expect(request).toMatch(/do not invent a starting size/i);
+    // The specific refusal the user hit: "no width is set, so I can't".
+    expect(request).toMatch(/do not refuse because none is written in the code/i);
   });
 });

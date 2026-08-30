@@ -5,6 +5,7 @@ import {
   linesBeforeApply,
   locate,
   parseHunkStartLine,
+  buildReplacement,
 } from "./hunk.js";
 
 export type ConflictReason = "context-not-found" | "ambiguous-location";
@@ -62,7 +63,6 @@ function patch(content: string, diff: FileDiff, mode: "apply" | "revert"): Patch
   for (const [position, hunk] of ordered.entries()) {
     const hunkIndex = mode === "apply" ? position : diff.hunks.length - 1 - position;
     const search = mode === "apply" ? linesBeforeApply(hunk) : linesAfterApply(hunk);
-    const replacement = mode === "apply" ? linesAfterApply(hunk) : linesBeforeApply(hunk);
 
     const hint = hintIndexFor(hunk, mode === "apply" ? offset : 0);
     const located = locate(lines, search, hint);
@@ -92,12 +92,19 @@ function patch(content: string, diff: FileDiff, mode: "apply" | "revert"): Patch
       };
     }
 
+    // Built against the file's own text for the matched region, so
+    // context lines keep the file's spacing and added lines land at the
+    // depth the file actually uses rather than the depth the hunk
+    // assumed (see buildReplacement).
+    const region = lines.slice(located.index, located.index + search.length);
+    const placed = buildReplacement(hunk, region, mode);
+
     lines = [
       ...lines.slice(0, located.index),
-      ...replacement,
+      ...placed,
       ...lines.slice(located.index + search.length),
     ];
-    offset += replacement.length - search.length;
+    offset += placed.length - search.length;
   }
 
   return { ok: true, content: joinLines(lines, ending) };

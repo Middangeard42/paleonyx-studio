@@ -29,16 +29,27 @@ export function composeDesignRequest(
   if (selection.path.length > 0) {
     facts.push(`- Where it sits on the page: ${selection.path.join(" > ")}`);
   }
+  // Phrased as the measured current size, not a bare dimension.
+  //
+  // Asked to make a button "twice as big", a model that reads the CSS,
+  // finds no width or height set, and concludes it cannot know the
+  // current size will invent one — observed producing 220x42 for a
+  // button that was neither. The rendered size is measured from the
+  // running page and is the answer to that question, but only if the
+  // prompt says so.
   facts.push(
-    `- On screen it is ${Math.round(selection.rect.width)} by ${Math.round(
-      selection.rect.height
-    )} pixels`
+    `- Its current size on screen, measured from the running page, is ${Math.round(
+      selection.rect.width
+    )} pixels wide by ${Math.round(selection.rect.height)} pixels tall`
   );
 
   const sections = [
     `The user is looking at ${selection.page} running in a live preview, and clicked on part of the page.`,
     ["What they clicked:", ...facts].join("\n"),
     `What they want changed: ${collapse(instruction)}`,
+    // A relative request has an answer here, and without saying so the
+    // model treats "no width in the CSS" as "the size is unknowable".
+    "If what they asked for is relative — bigger, half as wide, a bit taller — work it out from the measured size above. That is what the element is right now, whether or not the stylesheet says so. Do not invent a starting size, and do not refuse because none is written in the code.",
   ];
 
   // An exact location makes searching pointless and wrong to fall back

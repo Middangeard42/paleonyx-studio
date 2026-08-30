@@ -35,9 +35,40 @@ export function parseHunkStartLine(header: string): number | undefined {
 }
 
 export type LocateResult =
-  | { kind: "found"; index: number }
+  | { kind: "found"; index: number; exact: boolean }
   | { kind: "not-found" }
   | { kind: "ambiguous"; matches: number[] };
+
+/**
+ * Compares two lines ignoring surrounding whitespace.
+ *
+ * The distinction this draws is between the file having changed and the
+ * model having failed to copy indentation it was shown. Those look the
+ * same to an exact comparison and are not the same thing: the first is
+ * a reason to stop, the second is a reason to line the text back up.
+ */
+function sameIgnoringIndent(a: string | undefined, b: string | undefined): boolean {
+  return a !== undefined && b !== undefined && a.trim() === b.trim();
+}
+
+function findAll(
+  haystack: string[],
+  needle: string[],
+  equal: (a: string | undefined, b: string | undefined) => boolean
+): number[] {
+  const matches: number[] = [];
+  for (let start = 0; start + needle.length <= haystack.length; start += 1) {
+    let isMatch = true;
+    for (let offset = 0; offset < needle.length; offset += 1) {
+      if (!equal(haystack[start + offset], needle[offset])) {
+        isMatch = false;
+        break;
+      }
+    }
+    if (isMatch) matches.push(start);
+  }
+  return matches;
+}
 
 /**
  * Finds where `needle` sits inside `haystack`.
@@ -65,23 +96,22 @@ export function locate(
     // place to put it.
     if (hintIndex === undefined) return { kind: "not-found" };
     const clamped = Math.max(0, Math.min(hintIndex, haystack.length));
-    return { kind: "found", index: clamped };
+    return { kind: "found", index: clamped, exact: true };
   }
 
-  const matches: number[] = [];
-  for (let start = 0; start + needle.length <= haystack.length; start += 1) {
-    let isMatch = true;
-    for (let offset = 0; offset < needle.length; offset += 1) {
-      if (haystack[start + offset] !== needle[offset]) {
-        isMatch = false;
-        break;
-      }
-    }
-    if (isMatch) matches.push(start);
+  // Exact first, always. A model that copied the file faithfully gets
+  // the strict guarantee; the fallback below exists only for the case
+  // where nothing matched exactly at all.
+  let matches = findAll(haystack, needle, (a, b) => a === b);
+  let exact = true;
+
+  if (matches.length === 0) {
+    matches = findAll(haystack, needle, sameIgnoringIndent);
+    exact = false;
   }
 
   if (matches.length === 0) return { kind: "not-found" };
-  if (matches.length === 1) return { kind: "found", index: matches[0]! };
+  if (matches.length === 1) return { kind: "found", index: matches[0]!, exact };
   if (hintIndex === undefined) return { kind: "ambiguous", matches };
 
   let bestDistance = Infinity;
@@ -99,5 +129,83 @@ export function locate(
   }
 
   if (best === undefined || tied) return { kind: "ambiguous", matches };
-  return { kind: "found", index: best };
+  return { kind: "found", index: best, exact };
+}
+
+/**
+ * Builds what replaces the matched region, given the file's own text for
+ * it.
+ *
+ * Context lines come from the file rather than from the hunk. They are
+ * the lines we just matched, so the file's version is authoritative —
+ * and after a whitespace-tolerant match, the hunk's version has the
+ * wrong indentation by definition.
+ *
+ * Added lines are shifted by the difference between the indentation the
+ * hunk assumed and the indentation the file actually has, which keeps
+ * nesting inside the hunk intact while landing it at the right depth.
+ */
+export function buildReplacement(
+  hunk: DiffHunk,
+  fileRegion: readonly string[],
+  mode: "apply" | "revert"
+): string[] {
+  // Which line types are consumed from the file, and which are emitted,
+  // swap between applying and reverting.
+  const consumed = mode === "apply" ? "remove" : "add";
+  const emitted = mode === "apply" ? "add" : "remove";
+
+  const shift = indentShift(hunk, fileRegion, mode);
+  const out: string[] = [];
+  let cursor = 0;
+
+  for (const line of hunk.lines) {
+    if (line.type === "context") {
+      out.push(fileRegion[cursor] ?? line.content);
+      cursor += 1;
+    } else if (line.type === consumed) {
+      cursor += 1;
+    } else if (line.type === emitted) {
+      out.push(shift(line.content));
+    }
+  }
+  return out;
+}
+
+/**
+ * Works out how far the hunk's idea of indentation is from the file's,
+ * using the first line that appears in both.
+ */
+function indentShift(
+  hunk: DiffHunk,
+  fileRegion: readonly string[],
+  mode: "apply" | "revert"
+): (line: string) => string {
+  const searched = mode === "apply" ? "remove" : "add";
+  const reference = hunk.lines.find(
+    (line) =>
+      (line.type === "context" || line.type === searched) && line.content.trim() !== ""
+  );
+  const referenceIndex = hunk.lines
+    .filter((line) => line.type === "context" || line.type === searched)
+    .indexOf(reference!);
+
+  if (!reference || referenceIndex < 0) return (line) => line;
+
+  const from = leadingWhitespace(reference.content);
+  const to = leadingWhitespace(fileRegion[referenceIndex] ?? reference.content);
+  if (from === to) return (line) => line;
+
+  return (line) => {
+    if (line.trim() === "") return line;
+    if (from !== "" && line.startsWith(from)) return to + line.slice(from.length);
+    if (from === "") return to + line;
+    // Less indented than the reference: no clean mapping exists, so the
+    // line is left as written rather than guessed at.
+    return line;
+  };
+}
+
+function leadingWhitespace(line: string): string {
+  return line.slice(0, line.length - line.trimStart().length);
 }
