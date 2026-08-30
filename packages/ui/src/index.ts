@@ -69,3 +69,5 @@ export { describeSelection } from "./components/PreviewPanel.js";
 export type { ModelManagement } from "./components/ModelCatalogView.js";
 export { BudgetControl, parseLimits } from "./components/BudgetControl.js";
 export type { BudgetControlProps } from "./components/BudgetControl.js";
+export { ResizeHandle, clampWidth } from "./components/ResizeHandle.js";
+export type { ResizeHandleProps } from "./components/ResizeHandle.js";

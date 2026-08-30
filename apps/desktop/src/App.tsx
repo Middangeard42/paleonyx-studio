@@ -12,6 +12,8 @@ import {
   OnboardingFlow,
   Panel,
   PreviewPanel,
+  ResizeHandle,
+  clampWidth,
   ProjectWizard,
   SearchPanel,
   StatusBar,
@@ -91,6 +93,7 @@ import { TauriFileSystem, openProject } from "./tauri-filesystem.js";
 import { openFolderDialog } from "./tauri-dialog.js";
 import { searchProject } from "./tauri-search.js";
 import { runProjectCommand } from "./tauri-exec.js";
+import { openPreviewWindow } from "./preview-window.js";
 import { fileSymbols } from "./tauri-symbols.js";
 import {
   previewUrl,
@@ -585,6 +588,28 @@ function Workspace({
    */
   const [previewReloads, setPreviewReloads] = useState(0);
   const [designMode, setDesignModeOn] = useState(false);
+
+  /**
+   * Panel widths, per project.
+   *
+   * Per project rather than per user because the right width follows the
+   * work: a repo being read wants a wide tree, one being designed wants
+   * a wide preview. Clamped on use, since a width stored on a large
+   * monitor would otherwise leave a panel wider than a laptop screen
+   * with its drag handle off the edge.
+   */
+  const [leftWidth, setLeftWidth] = useLocalPreference<number>(
+    `paleonyx.width.left:${projectRoot}`,
+    260
+  );
+  const [rightWidth, setRightWidth] = useLocalPreference<number>(
+    `paleonyx.width.right:${projectRoot}`,
+    384
+  );
+  const [previewWidth, setPreviewWidth] = useLocalPreference<number>(
+    `paleonyx.width.preview:${projectRoot}`,
+    480
+  );
 
   /**
    * Per project, not per user (CLAUDE.md §6): letting the agent write
@@ -1190,7 +1215,10 @@ function Workspace({
           </div>
         ) : (
           <>
-        <div className="h-full w-64 shrink-0">
+        <div
+          className="h-full shrink-0"
+          style={{ width: clampWidth(leftWidth, 180, 560) }}
+        >
           {activePanel === "search" ? (
             <Panel title="Search">
               <SearchPanel
@@ -1208,6 +1236,14 @@ function Workspace({
             </Panel>
           )}
         </div>
+
+        <ResizeHandle
+          label="Resize the file panel"
+          width={clampWidth(leftWidth, 180, 560)}
+          onWidthChange={setLeftWidth}
+          min={180}
+          max={560}
+        />
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 items-center justify-end border-b border-border-subtle px-2 py-1">
@@ -1249,6 +1285,16 @@ function Workspace({
             </Tabs>
           )}
             </div>
+            {previewOpen && openPaths.length > 0 && (
+              <ResizeHandle
+                label="Resize the preview"
+                width={clampWidth(previewWidth, 280, 900)}
+                onWidthChange={setPreviewWidth}
+                min={280}
+                max={900}
+                invert
+              />
+            )}
             {previewOpen && (
               // Beside the editor rather than in a tab: seeing the change
               // and the result at once is the whole point, and a tab
@@ -1256,9 +1302,12 @@ function Workspace({
               // no file is open, which is the state a freshly scaffolded
               // project starts in.
               <div
-                className={`min-w-0 border-l border-border-subtle ${
-                  openPaths.length === 0 ? "flex-1" : "w-[30rem] shrink-0"
-                }`}
+                className={openPaths.length === 0 ? "min-w-0 flex-1" : "min-w-0 shrink-0"}
+                style={
+                  openPaths.length === 0
+                    ? undefined
+                    : { width: clampWidth(previewWidth, 280, 900) }
+                }
               >
                 <PreviewPanel
                   url={
@@ -1276,13 +1325,36 @@ function Workspace({
                     void handleDesignChange(selection, instruction)
                   }
                   busy={statusMessage !== null}
+                  onPopOut={() => {
+                    if (previewPort && previewEntry) {
+                      void openPreviewWindow(
+                        previewUrl(previewPort, previewEntry.path)
+                      ).catch((err: unknown) =>
+                        setPreviewError(
+                          err instanceof Error ? err.message : String(err)
+                        )
+                      );
+                    }
+                  }}
                 />
               </div>
             )}
           </div>
         </div>
 
-        <div className="flex h-full w-96 shrink-0 flex-col gap-3 overflow-auto border-l border-border-subtle p-3">
+        <ResizeHandle
+          label="Resize the agent panel"
+          width={clampWidth(rightWidth, 300, 720)}
+          onWidthChange={setRightWidth}
+          min={300}
+          max={720}
+          invert
+        />
+
+        <div
+          className="flex h-full shrink-0 flex-col gap-3 overflow-auto p-3"
+          style={{ width: clampWidth(rightWidth, 300, 720) }}
+        >
           {needsRepo && (
             <div className="rounded-md border border-status-warning/40 bg-status-warning/10 p-3">
               <p className="text-sm font-medium text-text-primary">

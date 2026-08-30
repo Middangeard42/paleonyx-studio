@@ -1,10 +1,13 @@
 {
   "identifier": "default",
-  "description": "Capabilities granted to the main window — scoped to exactly the three project-read commands v0 needs, nothing broader.",
-  "windows": ["main"],
+  "description": "Capabilities granted to the main window only. The preview pop-out is deliberately absent from `windows`: it renders the user's project, which is often code a model proposed and nobody has read, and it must reach nothing.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-set-title",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "core:webview:allow-create-webview-window"
   ]
 }

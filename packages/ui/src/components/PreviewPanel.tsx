@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Monitor, MousePointerClick, RotateCw, Smartphone, Tablet } from "lucide-react";
+import {
+  ExternalLink,
+  Monitor,
+  MousePointerClick,
+  RotateCw,
+  Smartphone,
+  Tablet,
+} from "lucide-react";
 import type { DesignSelection } from "@paleonyx/shared-types";
 import { IconButton } from "../primitives/IconButton.js";
 import { Button } from "../primitives/Button.js";
@@ -60,6 +67,11 @@ export interface PreviewPanelProps {
   onDesignChange?: (selection: DesignSelection, instruction: string) => void;
   /** True while a design change is running, so it cannot be asked twice. */
   busy?: boolean;
+  /**
+   * Opens the page in its own window. Omitted where there is no second
+   * window to open — the web harness — rather than shown and inert.
+   */
+  onPopOut?: () => void;
 }
 
 /**
@@ -83,6 +95,7 @@ export function PreviewPanel({
   onDesignModeChange,
   onDesignChange,
   busy = false,
+  onPopOut,
 }: PreviewPanelProps) {
   const [viewport, setViewport] = useState<PreviewViewportId>(initialViewport);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -164,6 +177,13 @@ export function PreviewPanel({
           label="Reload"
           onClick={() => setNonce((current) => current + 1)}
         />
+        {onPopOut && url && (
+          <IconButton
+            icon={<ExternalLink size={14} />}
+            label="Open in its own window"
+            onClick={onPopOut}
+          />
+        )}
       </div>
 
       <div className="flex flex-1 items-start justify-center overflow-auto bg-surface-1 p-3">
