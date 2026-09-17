@@ -90,6 +90,6 @@ export const PERMISSION_MODE_DESCRIPTORS: readonly PermissionModeDescriptor[] = 
     mode: "can-run-commands",
     label: "Can run commands",
     description:
-      "Adds the ability to run commands from this project's allowed list, such as tests and linters, and read their output.",
+      "Adds the ability to run commands from this project's allowed list, such as tests and linters, and read their output — and to use the connected tools you have allowed.",
   },
 ];

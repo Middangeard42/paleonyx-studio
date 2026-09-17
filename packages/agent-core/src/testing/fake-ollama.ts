@@ -28,7 +28,7 @@ export interface WireMessage {
 
 export interface SeenRequest {
   messages: WireMessage[];
-  tools?: { function: { name: string } }[];
+  tools?: { function: { name: string; description?: string; parameters?: unknown } }[];
 }
 
 export interface TurnReply {

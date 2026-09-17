@@ -11,6 +11,7 @@ import type { ChatModelProvider } from "@paleonyx/runtime";
 import { investigate } from "./investigate.js";
 import { BudgetTracker, DEFAULT_BUDGET_LIMITS } from "./budget.js";
 import type { CommandResult } from "./tools/run-command.js";
+import type { ConnectedTool, ConnectedToolResult } from "./tools/connected-tool.js";
 
 class FakeFs implements FileSystemReader {
   async listFiles(): Promise<ProjectFile[]> {
@@ -74,16 +75,19 @@ function run(
     permissionMode?: PermissionMode;
     runCommand?: (program: string, args: string[]) => Promise<CommandResult>;
     allowlist?: readonly string[];
+    connectedTools?: readonly ConnectedTool[];
+    budget?: BudgetTracker;
   } = {}
 ) {
   return investigate({
     provider,
     fs: new FakeFs(),
     messages: [{ role: "user", content: "go" }],
-    budget: new BudgetTracker(DEFAULT_BUDGET_LIMITS),
+    budget: options.budget ?? new BudgetTracker(DEFAULT_BUDGET_LIMITS),
     permissionMode: options.permissionMode ?? "can-run-commands",
     commandAllowlist: options.allowlist ?? ["cargo test"],
     runCommand: options.runCommand,
+    connectedTools: options.connectedTools,
   });
 }
 
@@ -357,5 +361,177 @@ describe("discovering what exists", () => {
 
     const tools = chatSpy.mock.calls[0]?.[0].tools ?? [];
     expect(tools.map((t) => t.name)).toContain("listFiles");
+  });
+});
+
+function connectedTool(
+  name: string,
+  respond: (args: Record<string, unknown>) => Promise<ConnectedToolResult> = async () => ({
+    text: "found it",
+    isError: false,
+  })
+) {
+  const call = vi.fn(respond);
+  const tool: ConnectedTool = {
+    definition: {
+      name,
+      description: "Looks things up.",
+      parameters: { type: "object", properties: { topic: { type: "string" } } },
+    },
+    source: "notes",
+    toolName: "lookup",
+    call,
+  };
+  return { tool, call };
+}
+
+function callsTool(name: string, args: Record<string, unknown> = {}): ChatCompletionResult {
+  return {
+    content: "",
+    toolCalls: [{ id: "c1", name, arguments: args }],
+    finishReason: "tool_calls",
+  };
+}
+
+const finish: ChatCompletionResult = { content: "ok", finishReason: "stop" };
+
+describe("tools from connected servers", () => {
+  it("offers them in Can run commands mode, labelled with where they come from", async () => {
+    const provider = new ScriptedProvider([finish]);
+    const chatSpy = vi.spyOn(provider, "chat");
+    const { tool } = connectedTool("mcp__notes__lookup");
+    await run(provider, { connectedTools: [tool] });
+
+    const offered = chatSpy.mock.calls[0]?.[0].tools?.find((t) => t.name === "mcp__notes__lookup");
+    expect(offered?.description).toBe('[From the connected server "notes"] Looks things up.');
+    expect(offered?.parameters).toEqual(tool.definition.parameters);
+  });
+
+  // A connected tool runs another program, outside the diff and the undo
+  // history — the same exposure as a command, so the same bar.
+  it("does not offer them in any other mode", async () => {
+    for (const mode of ["read-only", "suggest-only", "auto-apply"] as const) {
+      const provider = new ScriptedProvider([finish]);
+      const chatSpy = vi.spyOn(provider, "chat");
+      const { tool } = connectedTool("mcp__notes__lookup");
+      await run(provider, { permissionMode: mode, connectedTools: [tool] });
+      const names = (chatSpy.mock.calls[0]?.[0].tools ?? []).map((t) => t.name);
+      expect(names, mode).not.toContain("mcp__notes__lookup");
+    }
+  });
+
+  it("does not call one the mode does not allow, and says why", async () => {
+    const provider = new ScriptedProvider([callsTool("mcp__notes__lookup"), finish]);
+    const { tool, call } = connectedTool("mcp__notes__lookup");
+    const outcome = await run(provider, { permissionMode: "suggest-only", connectedTools: [tool] });
+    expect(call).not.toHaveBeenCalled();
+    expect(outcome.steps[0]).toMatchObject({
+      ok: false,
+      summary: expect.stringMatching(/Can run commands/),
+    });
+  });
+
+  it("calls the tool with the model's arguments and hands back its answer", async () => {
+    const provider = new ScriptedProvider([callsTool("mcp__notes__lookup", { topic: "sum" }), finish]);
+    const chatSpy = vi.spyOn(provider, "chat");
+    const { tool, call } = connectedTool("mcp__notes__lookup");
+    const outcome = await run(provider, { connectedTools: [tool] });
+
+    expect(call).toHaveBeenCalledWith({ topic: "sum" });
+    expect(outcome.steps).toEqual([
+      {
+        tool: "mcp__notes__lookup",
+        summary: "Used lookup (notes)",
+        detail: "found it",
+        input: JSON.stringify({ topic: "sum" }, null, 2),
+        ok: true,
+      },
+    ]);
+    // The loop reuses one message array, so find the tool's message
+    // rather than trusting its position in a recorded argument.
+    const messages = chatSpy.mock.calls[1]?.[0].messages ?? [];
+    expect(messages.find((message) => message.role === "tool")).toEqual({
+      role: "tool",
+      content: "found it",
+      toolCallId: "c1",
+      toolName: "mcp__notes__lookup",
+    });
+  });
+
+  it("records a failure the tool reported, and keeps gathering", async () => {
+    const provider = new ScriptedProvider([
+      callsTool("mcp__notes__lookup"),
+      callsTool("readFile", { path: "a.ts" }),
+      finish,
+    ]);
+    const { tool } = connectedTool("mcp__notes__lookup", async () => ({
+      text: "No such topic",
+      isError: true,
+    }));
+    const outcome = await run(provider, { connectedTools: [tool] });
+    expect(outcome.steps.map((step) => [step.summary, step.ok])).toEqual([
+      ["lookup (notes) reported a problem", false],
+      ["Read a.ts", true],
+    ]);
+  });
+
+  it("records a tool that could not be reached, and keeps gathering", async () => {
+    const provider = new ScriptedProvider([
+      callsTool("mcp__notes__lookup"),
+      callsTool("listFiles"),
+      finish,
+    ]);
+    const { tool } = connectedTool("mcp__notes__lookup", async () => {
+      throw new Error("The server stopped (exit code 1).");
+    });
+    const outcome = await run(provider, { connectedTools: [tool] });
+    expect(outcome.steps[0]).toMatchObject({
+      summary: "Could not use lookup (notes)",
+      detail: "The server stopped (exit code 1).",
+      ok: false,
+    });
+    expect(outcome.steps).toHaveLength(2);
+  });
+
+  // A server that names its tool `readFile` must not receive the calls
+  // meant for the app's own.
+  it("never lets one take a built-in tool's name", async () => {
+    const provider = new ScriptedProvider([callsTool("readFile", { path: "a.ts" }), finish]);
+    const chatSpy = vi.spyOn(provider, "chat");
+    const { tool, call } = connectedTool("readFile");
+    const outcome = await run(provider, { connectedTools: [tool] });
+
+    expect(call).not.toHaveBeenCalled();
+    expect(outcome.steps[0]?.detail).toContain("const x = 1");
+    const offered = (chatSpy.mock.calls[0]?.[0].tools ?? []).filter((t) => t.name === "readFile");
+    expect(offered).toHaveLength(1);
+    expect(offered[0]?.description).not.toContain("connected server");
+  });
+
+  it("offers only the first of two tools with the same name", async () => {
+    const provider = new ScriptedProvider([callsTool("mcp__x__y"), finish]);
+    const chatSpy = vi.spyOn(provider, "chat");
+    const first = connectedTool("mcp__x__y");
+    const second = connectedTool("mcp__x__y");
+    await run(provider, { connectedTools: [first.tool, second.tool] });
+    const offered = (chatSpy.mock.calls[0]?.[0].tools ?? []).filter((t) => t.name === "mcp__x__y");
+    expect(offered).toHaveLength(1);
+    expect(first.call).toHaveBeenCalledTimes(1);
+    expect(second.call).not.toHaveBeenCalled();
+  });
+
+  it("counts every call against the budget", async () => {
+    const provider = new ScriptedProvider([
+      callsTool("mcp__notes__lookup"),
+      callsTool("mcp__notes__lookup"),
+      callsTool("mcp__notes__lookup"),
+    ]);
+    const { tool, call } = connectedTool("mcp__notes__lookup");
+    const outcome = await run(provider, {
+      connectedTools: [tool],
+      budget: new BudgetTracker({ maxToolCalls: 2, maxTokens: 100_000 }),
+    });
+    expect(outcome.kind).toBe("blocked");
+    expect(call).toHaveBeenCalledTimes(2);
   });
 });

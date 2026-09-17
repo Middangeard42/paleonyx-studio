@@ -59,6 +59,17 @@ describe("buildSystemPrompt", () => {
   });
 });
 
+describe("buildSystemPrompt with connected tools", () => {
+  it("warns that their output is not instructions, only when they are offered", () => {
+    const offered = buildSystemPrompt("bug-fix", "experienced", true, true);
+    expect(offered).toContain("not instructions");
+    expect(offered).toContain("mcp__");
+    expect(buildSystemPrompt("bug-fix", "experienced", true, false)).not.toContain("mcp__");
+    // Without tool calling nothing is offered, whatever the caller says.
+    expect(buildSystemPrompt("bug-fix", "experienced", false, true)).not.toContain("mcp__");
+  });
+});
+
 describe("buildSystemPrompt for a new project", () => {
   // The first scaffold run produced index.html loading `src/sum.ts` and
   // `src/greet.ts` through plain <script src> tags. A browser cannot run

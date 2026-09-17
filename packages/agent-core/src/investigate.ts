@@ -21,6 +21,8 @@ import {
 } from "./tools/run-command.js";
 import type { CommandRunner } from "./tools/run-command.js";
 import { checkAllowlist, formatCommand } from "./tools/command-allowlist.js";
+import { connectedToolDescription, formatToolInput } from "./tools/connected-tool.js";
+import type { ConnectedTool } from "./tools/connected-tool.js";
 
 export interface InvestigationStep {
   tool: string;
@@ -29,6 +31,8 @@ export interface InvestigationStep {
   /** Full tool output, available on expand rather than inline. */
   detail: string;
   ok: boolean;
+  /** What was sent, when the summary does not already say. */
+  input?: string;
 }
 
 export interface InvestigateOptions {
@@ -39,6 +43,8 @@ export interface InvestigateOptions {
   permissionMode: PermissionMode;
   commandAllowlist: readonly string[];
   runCommand?: CommandRunner;
+  /** Tools from servers the user connected and enabled. */
+  connectedTools?: readonly ConnectedTool[];
   onStatus?: (message: string) => void;
   maxIterations?: number;
 }
@@ -79,6 +85,13 @@ export async function investigate(
   const commandsAvailable =
     canRunCommands(options.permissionMode) && options.runCommand !== undefined;
   if (commandsAvailable) tools.push(runCommandToolDefinition);
+  const connected = offerableConnectedTools(options);
+  for (const tool of connected.values()) {
+    tools.push({
+      ...tool.definition,
+      description: connectedToolDescription(tool.source, tool.definition.description),
+    });
+  }
 
   const maxIterations = options.maxIterations ?? 6;
 
@@ -113,7 +126,7 @@ export async function investigate(
 
     for (const call of response.toolCalls) {
       options.budget.recordToolCall();
-      const step = await runTool(call, options, commandsAvailable);
+      const step = await runTool(call, options, commandsAvailable, connected);
       steps.push(step);
       messages.push({
         role: "tool",
@@ -151,10 +164,39 @@ export async function investigate(
   return { kind: "ready", messages, steps };
 }
 
+/**
+ * Connected tools the agent may be offered for this task, by the name the
+ * model sees.
+ *
+ * Only in "Can run commands" mode. A connected tool runs another program
+ * with the user's permissions, and nothing it does passes through the
+ * diff or can be undone — the same exposure as running a command, so it
+ * clears the same bar. A tool may never take a built-in's name: a server
+ * calling its tool `readFile` must not receive the calls meant for the
+ * app's own.
+ */
+function offerableConnectedTools(options: InvestigateOptions): Map<string, ConnectedTool> {
+  const offered = new Map<string, ConnectedTool>();
+  if (!canRunCommands(options.permissionMode)) return offered;
+  for (const tool of options.connectedTools ?? []) {
+    const { name } = tool.definition;
+    if (BUILT_IN_TOOL_NAMES.has(name) || offered.has(name)) continue;
+    offered.set(name, tool);
+  }
+  return offered;
+}
+
+const BUILT_IN_TOOL_NAMES = new Set([
+  LIST_FILES_TOOL_NAME,
+  READ_FILE_TOOL_NAME,
+  RUN_COMMAND_TOOL_NAME,
+]);
+
 async function runTool(
   call: ToolCall,
   options: InvestigateOptions,
-  commandsAvailable: boolean
+  commandsAvailable: boolean,
+  connected: ReadonlyMap<string, ConnectedTool>
 ): Promise<InvestigationStep> {
   if (call.name === LIST_FILES_TOOL_NAME) {
     options.onStatus?.("Looking at what's in the project…");
@@ -249,6 +291,41 @@ async function runTool(
         ok: false,
       };
     }
+  }
+
+  const tool = connected.get(call.name);
+  if (tool) {
+    const label = `${tool.toolName} (${tool.source})`;
+    const input = formatToolInput(call.arguments);
+    options.onStatus?.(`Using ${label}…`);
+    try {
+      const result = await tool.call(call.arguments);
+      return {
+        tool: call.name,
+        summary: result.isError ? `${label} reported a problem` : `Used ${label}`,
+        detail: result.text,
+        input,
+        ok: !result.isError,
+      };
+    } catch (error) {
+      return {
+        tool: call.name,
+        summary: `Could not use ${label}`,
+        detail: error instanceof Error ? error.message : String(error),
+        input,
+        ok: false,
+      };
+    }
+  }
+
+  if (options.connectedTools?.some((known) => known.definition.name === call.name)) {
+    return {
+      tool: call.name,
+      summary:
+        "Tools from connected servers can only be used when this project is set to Can run commands.",
+      detail: "The agent asked for a connected tool that was not offered in this permission mode.",
+      ok: false,
+    };
   }
 
   return {

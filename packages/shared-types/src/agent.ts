@@ -116,4 +116,10 @@ export interface AgentInvestigationStep {
   summary: string;
   detail: string;
   ok: boolean;
+  /**
+   * What the agent sent, when that is not already in the summary. Tools
+   * from connected servers take arbitrary arguments, and those arguments
+   * are exactly where project content could be sent somewhere.
+   */
+  input?: string;
 }

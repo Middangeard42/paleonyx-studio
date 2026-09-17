@@ -26,6 +26,13 @@ export interface ToolParameterSchema {
   type: "object";
   properties: Record<string, unknown>;
   required?: string[];
+  /**
+   * Shared definitions that `properties` point into with local `$ref`s.
+   * Only tools from connected servers use them; dropping them would leave
+   * those references dangling.
+   */
+  $defs?: Record<string, unknown>;
+  additionalProperties?: boolean | Record<string, unknown>;
 }
 
 export interface ToolDefinition {

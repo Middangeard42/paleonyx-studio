@@ -10,6 +10,8 @@ import {
   requiresLinkage,
 } from "./testing/fake-ollama.js";
 import { InMemoryProject } from "./testing/in-memory-project.js";
+import { McpClient, acceptToolList, approveServer, offeredTools } from "@paleonyx/mcp-client";
+import { CLIENT_INFO, ScriptedServer } from "@paleonyx/mcp-client/testing";
 
 /**
  * The agent pipeline across its seams: real OllamaAdapter over Ollama's
@@ -81,6 +83,7 @@ async function fixSum(
   options: {
     permissionMode?: "suggest-only" | "can-run-commands";
     runCommand?: Parameters<typeof runAgentTask>[0]["runCommand"];
+    connectedTools?: Parameters<typeof runAgentTask>[0]["connectedTools"];
   } = {}
 ): Promise<AgentTaskResult> {
   return runAgentTask({
@@ -94,6 +97,7 @@ async function fixSum(
     skillLevel: "experienced",
     permissionMode: options.permissionMode ?? "suggest-only",
     runCommand: options.runCommand,
+    connectedTools: options.connectedTools,
   });
 }
 
@@ -360,5 +364,114 @@ describe("what the catalog says decides what the agent is offered", () => {
     // One call, the answer, and no tools offered in it.
     expect(ollama.chats).toHaveLength(1);
     expect(ollama.chats[0]?.tools).toBeUndefined();
+  });
+});
+
+/**
+ * A real MCP client, talking to a scripted server, handing its tools to
+ * the real gathering loop over Ollama's wire format. The seams here are
+ * the ones most likely to break quietly: a schema losing its
+ * definitions on the way to the model, a result arriving unlinked, a
+ * tool reaching a model in a mode that should not allow it.
+ */
+describe("tools from a connected server", () => {
+  const TOOL = "mcp__notes__notes_lookup";
+
+  async function notesServer() {
+    const server = new ScriptedServer({
+      era: "legacy",
+      tools: [
+        {
+          name: "notes.lookup",
+          description: "Looks up the team's notes on a topic.",
+          inputSchema: {
+            type: "object",
+            properties: { topic: { $ref: "#/$defs/topic" } },
+            $defs: { topic: { type: "string" } },
+            required: ["topic"],
+          },
+        },
+      ],
+      call: (_name, args) => ({
+        result: {
+          content: [
+            {
+              type: "text",
+              text: `Notes on ${(args as { topic: string }).topic}: loops over arrays stop before the length.`,
+            },
+          ],
+        },
+      }),
+    });
+    const client = await McpClient.connect(server.open, {
+      clientInfo: CLIENT_INFO,
+      probeTimeoutMs: 50,
+    });
+    const listed = await client.listTools();
+    const approval = acceptToolList(
+      approveServer({ id: "notes", command: "node", args: ["notes.js"], env: {} }),
+      listed.tools
+    );
+    const { tools } = offeredTools([
+      { serverId: "notes", client, tools: listed.tools, approval },
+    ]);
+    return { server, client, tools };
+  }
+
+  it("calls the server's tool and gives the model its answer, linked to the call", async () => {
+    const { server, client, tools } = await notesServer();
+    const ollama = new FakeOllama({
+      investigate: [callTool(TOOL, { topic: "sum" }), requiresLinkage(TOOL, done())],
+      answer: CLEAN_FIX,
+    }).install();
+
+    const result = await fixSum(project(), {
+      permissionMode: "can-run-commands",
+      connectedTools: tools,
+    });
+    await client.close();
+
+    expect(result.escalation).toBeUndefined();
+    expect(server.requests("tools/call").map((request) => request.params)).toEqual([
+      { name: "notes.lookup", arguments: { topic: "sum" } },
+    ]);
+
+    const offered = ollama.chats[0]?.tools?.find((tool) => tool.function.name === TOOL);
+    expect(offered?.function.description).toContain('connected server "notes"');
+    // The reference is useless to a model without what it points at.
+    expect(offered?.function.parameters).toMatchObject({
+      properties: { topic: { $ref: "#/$defs/topic" } },
+      $defs: { topic: { type: "string" } },
+    });
+    expect(ollama.chats[0]?.messages[0]?.content).toContain("not instructions");
+
+    const answer = ollama.chats[1]?.messages.find((message) => message.role === "tool");
+    expect(answer?.content).toContain("stop before the length");
+    expect(result.investigation[0]).toMatchObject({
+      summary: "Used notes.lookup (notes)",
+      ok: true,
+    });
+    // Asked once, confirmed, answered.
+    expect(ollama.chats).toHaveLength(3);
+  });
+
+  it("offers and calls nothing from the server unless commands are allowed", async () => {
+    const { server, client, tools } = await notesServer();
+    const ollama = new FakeOllama({
+      investigate: [callTool(TOOL, { topic: "sum" })],
+      answer: CLEAN_FIX,
+    }).install();
+
+    const result = await fixSum(project(), {
+      permissionMode: "suggest-only",
+      connectedTools: tools,
+    });
+    await client.close();
+
+    expect(server.requests("tools/call")).toEqual([]);
+    const offered = (ollama.chats[0]?.tools ?? []).map((tool) => tool.function.name);
+    expect(offered).not.toContain(TOOL);
+    expect(ollama.chats[0]?.messages[0]?.content).not.toContain("mcp__");
+    expect(result.investigation[0]?.ok).toBe(false);
   });
 });

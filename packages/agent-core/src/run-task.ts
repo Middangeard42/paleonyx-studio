@@ -14,6 +14,7 @@ import type {
 import {
   DEFAULT_PERMISSION_MODE,
   canProposeEdits,
+  canRunCommands,
   taskProducesEdits,
 } from "@paleonyx/shared-types";
 import type { ChatModelProvider } from "@paleonyx/runtime";
@@ -26,6 +27,7 @@ import { investigate } from "./investigate.js";
 import type { InvestigationStep } from "./investigate.js";
 import type { CommandRunner } from "./tools/run-command.js";
 import { DEFAULT_COMMAND_ALLOWLIST } from "./tools/command-allowlist.js";
+import type { ConnectedTool } from "./tools/connected-tool.js";
 
 export interface RunAgentTaskOptions {
   provider: ChatModelProvider;
@@ -46,6 +48,11 @@ export interface RunAgentTaskOptions {
    */
   runCommand?: CommandRunner;
   commandAllowlist?: readonly string[];
+  /**
+   * Tools from servers the user connected and enabled. Offered only in a
+   * mode that permits running commands; see `investigate`.
+   */
+  connectedTools?: readonly ConnectedTool[];
   /**
    * The project's own conventions, from files like AGENTS.md. Passed in
    * rather than discovered here: finding them is an indexing concern,
@@ -150,6 +157,7 @@ export async function runAgentTask(
     }
   }
 
+  const supportsToolCalling = options.provider.model.capabilities.supportsToolCalling;
   const baseMessages: ChatMessage[] = [
     {
       role: "system",
@@ -158,7 +166,8 @@ export async function runAgentTask(
       content: buildSystemPrompt(
         taskType,
         options.skillLevel,
-        options.provider.model.capabilities.supportsToolCalling
+        supportsToolCalling,
+        canRunCommands(permissionMode) && (options.connectedTools?.length ?? 0) > 0
       ),
     },
     {
@@ -187,6 +196,7 @@ export async function runAgentTask(
     permissionMode,
     commandAllowlist: options.commandAllowlist ?? DEFAULT_COMMAND_ALLOWLIST,
     runCommand: options.runCommand,
+    connectedTools: options.connectedTools,
     onStatus: options.onStatus,
   });
 

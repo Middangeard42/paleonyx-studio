@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, Terminal, TriangleAlert } from "lucide-react";
+import { FileText, Plug, Terminal, TriangleAlert } from "lucide-react";
 import clsx from "clsx";
 import type { AgentInvestigationStep } from "@paleonyx/shared-types";
 
@@ -38,6 +38,7 @@ export function InvestigationLog({ steps }: InvestigationLogProps) {
 function StepRow({ step }: { step: AgentInvestigationStep }) {
   const [expanded, setExpanded] = useState(false);
   const isCommand = step.tool === "runCommand";
+  const isConnected = step.tool.startsWith("mcp__");
 
   return (
     <li className="rounded border border-border-subtle bg-surface-2">
@@ -51,6 +52,8 @@ function StepRow({ step }: { step: AgentInvestigationStep }) {
           <TriangleAlert size={12} className="shrink-0 text-status-warning" />
         ) : isCommand ? (
           <Terminal size={12} className="shrink-0 text-text-tertiary" />
+        ) : isConnected ? (
+          <Plug size={12} className="shrink-0 text-text-tertiary" />
         ) : (
           <FileText size={12} className="shrink-0 text-text-tertiary" />
         )}
@@ -64,9 +67,20 @@ function StepRow({ step }: { step: AgentInvestigationStep }) {
         </span>
       </button>
       {expanded && (
-        <pre className="max-h-64 overflow-auto border-t border-border-subtle px-2 py-1.5 font-mono text-xs text-text-secondary whitespace-pre-wrap">
-          {step.detail}
-        </pre>
+        <div className="border-t border-border-subtle">
+          {step.input !== undefined && (
+            <>
+              <p className="px-2 pt-1.5 text-xs text-text-tertiary">Sent</p>
+              <pre className="max-h-40 overflow-auto px-2 py-1 font-mono text-xs text-text-secondary whitespace-pre-wrap">
+                {step.input}
+              </pre>
+              <p className="px-2 pt-1 text-xs text-text-tertiary">Returned</p>
+            </>
+          )}
+          <pre className="max-h-64 overflow-auto px-2 py-1.5 font-mono text-xs text-text-secondary whitespace-pre-wrap">
+            {step.detail}
+          </pre>
+        </div>
       )}
     </li>
   );

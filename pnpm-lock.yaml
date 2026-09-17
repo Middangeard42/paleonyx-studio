@@ -41,6 +41,9 @@ importers:
       '@paleonyx/indexing':
         specifier: workspace:*
         version: link:../../packages/indexing
+      '@paleonyx/mcp-client':
+        specifier: workspace:*
+        version: link:../../packages/mcp-client
       '@paleonyx/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
@@ -176,6 +179,9 @@ importers:
         specifier: workspace:*
         version: link:../shared-types
     devDependencies:
+      '@paleonyx/mcp-client':
+        specifier: workspace:*
+        version: link:../mcp-client
       '@paleonyx/vcs':
         specifier: workspace:*
         version: link:../vcs
@@ -212,6 +218,19 @@ importers:
         version: 5.4.21(@types/node@24.13.5)
 
   packages/indexing:
+    dependencies:
+      '@paleonyx/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.3
+        version: 2.1.9(@types/node@24.13.5)
+
+  packages/mcp-client:
     dependencies:
       '@paleonyx/shared-types':
         specifier: workspace:*

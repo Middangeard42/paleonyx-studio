@@ -73,3 +73,11 @@ export { ResizeHandle, clampWidth } from "./components/ResizeHandle.js";
 export type { ResizeHandleProps } from "./components/ResizeHandle.js";
 export { SkillPicker } from "./components/SkillPicker.js";
 export type { SkillPickerProps } from "./components/SkillPicker.js";
+export { ConnectedToolsView, describeCommandLine } from "./components/ConnectedToolsView.js";
+export type {
+  ConnectedToolsViewProps,
+  ConnectedServerView,
+  ConnectedServerState,
+  ConnectedServerApproval,
+  ConnectedToolView,
+} from "./components/ConnectedToolsView.js";

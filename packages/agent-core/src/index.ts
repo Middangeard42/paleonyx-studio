@@ -22,6 +22,11 @@ export {
 } from "./tools/run-command.js";
 export type { CommandRunner, CommandResult } from "./tools/run-command.js";
 export {
+  connectedToolDescription,
+  formatToolInput,
+} from "./tools/connected-tool.js";
+export type { ConnectedTool, ConnectedToolResult } from "./tools/connected-tool.js";
+export {
   DEFAULT_COMMAND_ALLOWLIST,
   checkAllowlist,
   formatCommand,
