@@ -71,3 +71,5 @@ export { BudgetControl, parseLimits } from "./components/BudgetControl.js";
 export type { BudgetControlProps } from "./components/BudgetControl.js";
 export { ResizeHandle, clampWidth } from "./components/ResizeHandle.js";
 export type { ResizeHandleProps } from "./components/ResizeHandle.js";
+export { SkillPicker } from "./components/SkillPicker.js";
+export type { SkillPickerProps } from "./components/SkillPicker.js";

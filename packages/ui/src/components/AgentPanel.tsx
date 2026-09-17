@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { AgentTaskResult, AgentTaskType, SkillLevel } from "@paleonyx/shared-types";
 import { Button } from "../primitives/Button.js";
 import { Panel } from "../primitives/Panel.js";
@@ -67,6 +68,11 @@ export interface AgentPanelProps {
   projectDocs?: readonly { path: string; truncated: boolean }[];
   docsEnabled?: boolean;
   onDocsEnabledChange?: (enabled: boolean) => void;
+  /**
+   * Shown above the task form. A slot rather than a set of skill props,
+   * so this panel does not need to know how skills are loaded or saved.
+   */
+  skills?: ReactNode;
 }
 
 export function AgentPanel(props: AgentPanelProps) {
@@ -92,6 +98,7 @@ export function AgentPanel(props: AgentPanelProps) {
 
         <section>
           <h3 className="text-xs font-medium text-text-tertiary mb-1.5">Task</h3>
+          {props.skills && <div className="mb-2">{props.skills}</div>}
           <TaskForm
             taskType={props.taskType}
             onTaskTypeChange={props.onTaskTypeChange}
