@@ -236,6 +236,13 @@ what's excluded is building a full teaching-curriculum product around them.
   default; keys are never stored in plaintext (CLAUDE.md §4).
 - MCP tool integration for extending agent capability.
 - Simple skill system: reusable task templates/workflows.
+  Status: templates are built. Six ship with the app, one per task type
+  plus a security review; a project adds its own as Markdown files in
+  `.paleonyx/skills/`, and any task can be saved as one from the app. A
+  skill names a task and supplies its words, and nothing else — it cannot
+  change what the agent is allowed to do (CLAUDE.md §6). Not built:
+  multi-step workflows that chain tasks, and user-wide skills outside a
+  project, which would need a read path beyond the opened folder.
 - **Skill-level adaptation**: a user-set level (new to coding / experienced
   / professional) that shapes explanation depth and tone across agent
   responses, task plans, and diffs (never capability — see DESIGN.md §6.1

@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Capabilities granted to the main window only. The preview pop-out is deliberately absent from `windows`: it renders the user's project, which is often code a model proposed and nobody has read, and it must reach nothing.",
+  "description": "Capabilities for the main window. The preview pop-out gets none: it renders the user's project from the preview server's origin, and a capability applies to a remote origin only if it lists it under `remote`. Never add the preview server's address there \u2014 the end-to-end suite checks the pop-out cannot call app commands.",
   "windows": [
     "main"
   ],

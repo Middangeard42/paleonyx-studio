@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p e2e/tsconfig.json",
     "test": "vitest run",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "e2e": "cargo build --manifest-path src-tauri/Cargo.toml && vitest run --config e2e/vitest.config.ts"
   },
   "dependencies": {
     "@paleonyx/agent-core": "workspace:*",
@@ -16,6 +17,7 @@
     "@paleonyx/indexing": "workspace:*",
     "@paleonyx/runtime": "workspace:*",
     "@paleonyx/shared-types": "workspace:*",
+    "@paleonyx/skills": "workspace:*",
     "@paleonyx/system-profile": "workspace:*",
     "@paleonyx/ui": "workspace:*",
     "@paleonyx/vcs": "workspace:*",
@@ -27,6 +29,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.4",
+    "@types/node": "^24.0.0",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.2",

@@ -12,6 +12,7 @@ import {
   OnboardingFlow,
   Panel,
   PreviewPanel,
+  SkillPicker,
   ResizeHandle,
   clampWidth,
   ProjectWizard,
@@ -37,6 +38,12 @@ import {
   refreshAfterWrite,
 } from "./workspace-files.js";
 import { CodeEditor } from "@paleonyx/editor";
+import {
+  formatSkill,
+  loadSkills,
+  nameFromTitle,
+  projectSkillPath,
+} from "@paleonyx/skills";
 import {
   describeMissingEntry,
   findContextDocuments,
@@ -86,7 +93,9 @@ import type {
   ProjectFile,
   SearchOptions,
   SearchResults,
+  Skill,
   SkillLevel,
+  SkillProblem,
   SystemProfile,
 } from "@paleonyx/shared-types";
 import { TauriFileSystem, openProject } from "./tauri-filesystem.js";
@@ -116,6 +125,21 @@ import {
 } from "./tauri-secrets.js";
 
 const ZERO_BUDGET_USAGE: BudgetUsage = { toolCalls: 0, tokens: 0 };
+
+/**
+ * Where Ollama is.
+ *
+ * Its standard local address in any build a user runs. A development
+ * build can be pointed elsewhere, and only so the end-to-end tests can
+ * substitute a scripted fake: a real model answers differently every
+ * run, and the journeys those tests check — propose, apply, undo — need
+ * the same answer every time. Gated on DEV rather than merely read, so a
+ * shipped app has no way to be pointed anywhere, which keeps the runtime
+ * the one local-first choke point CLAUDE.md §4 describes.
+ */
+const OLLAMA_URL: string | undefined = import.meta.env.DEV
+  ? (import.meta.env.VITE_PALEONYX_OLLAMA_URL as string | undefined)
+  : undefined;
 
 /**
  * The catalog, hardware profile, and model/skill preferences live here
@@ -189,7 +213,7 @@ export function App() {
    * is.
    */
   const refreshCatalog = useCallback(async () => {
-    setCatalog(await loadModelCatalog());
+    setCatalog(await loadModelCatalog({ ollamaBaseUrl: OLLAMA_URL }));
   }, []);
 
   /**
@@ -210,12 +234,12 @@ export function App() {
   const installAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    void pingOllama().then(setOllamaReachable);
+    void pingOllama(OLLAMA_URL).then(setOllamaReachable);
   }, [catalog]);
 
   const handleInstallModel = useCallback(
     async (entry: ModelCatalogEntry) => {
-      const installer = installerFor("ollama");
+      const installer = installerFor("ollama", OLLAMA_URL);
       if (!installer) return;
       const abort = new AbortController();
       installAbort.current = abort;
@@ -245,7 +269,7 @@ export function App() {
 
   const handleUninstallModel = useCallback(
     async (entry: ModelCatalogEntry) => {
-      const installer = installerFor("ollama");
+      const installer = installerFor("ollama", OLLAMA_URL);
       if (!installer) return;
       setManageError(null);
       setRemovingId(entry.id);
@@ -638,6 +662,10 @@ function Workspace({
   const [bornStale, setBornStale] = useState(false);
   /** The project's own convention files, discovered on open. */
   const [contextDocs, setContextDocs] = useState<ContextDocument[]>([]);
+  /** Built-in skills plus the project's own, and any that failed to load. */
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillProblems, setSkillProblems] = useState<SkillProblem[]>([]);
+  const [activeSkill, setActiveSkill] = useState<Skill | null>(null);
   const [docsEnabled, setDocsEnabled] = useLocalPreference(
     `paleonyx.followConventions:${projectRoot}`,
     true
@@ -659,6 +687,12 @@ function Workspace({
   const [undoConflicts, setUndoConflicts] = useState<Record<string, string>>({});
   const [needsRepo, setNeedsRepo] = useState(false);
 
+  const refreshSkills = useCallback(async () => {
+    const loaded = await loadSkills(fs);
+    setSkills(loaded.skills);
+    setSkillProblems(loaded.problems);
+  }, [fs]);
+
   useEffect(() => {
     listProjectFiles(fs).then(setFiles);
     // Best effort: a project with no conventions file is the common case,
@@ -666,7 +700,46 @@ function Workspace({
     findContextDocuments(fs)
       .then(setContextDocs)
       .catch(() => setContextDocs([]));
-  }, [fs, projectRoot]);
+    void refreshSkills();
+  }, [fs, projectRoot, refreshSkills]);
+
+  /**
+   * Fills the task form from a skill; the user still reads it and
+   * presses Run. Leaves the context files alone — a skill describes a
+   * task, and which files it applies to is the user's choice.
+   */
+  function applySkill(skill: Skill) {
+    setTaskType(skill.taskType);
+    setInstructions(skill.instructions);
+    setActiveSkill(skill);
+  }
+
+  /**
+   * Saves the task box as a project skill.
+   *
+   * Written as the user's own edit rather than an agent change: the user
+   * wrote these words and chose to keep them, so this belongs in their
+   * files and not in the agent's history. Refuses to overwrite an
+   * existing skill rather than silently replacing someone's template.
+   */
+  async function saveSkill(title: string): Promise<string> {
+    const name = nameFromTitle(title);
+    const path = projectSkillPath(name);
+    if (files.some((file) => file.path === path)) {
+      throw new Error(`A skill named ${name} already exists — choose another name.`);
+    }
+    if (taskType === "scaffold" || taskType === "design-change") {
+      throw new Error("Only tasks from the task form can be saved as skills.");
+    }
+    await saveUserEdits(
+      new Map([
+        [path, formatSkill({ name, title, taskType, instructions })],
+      ])
+    );
+    setFiles(await listProjectFiles(fs));
+    await refreshSkills();
+    return path;
+  }
 
   const refreshHistory = useCallback(async () => {
     // A project that isn't a repo yet simply has no history — not an
@@ -1011,7 +1084,7 @@ function Workspace({
       return;
     }
 
-    pingOllama().then((reachable) => {
+    pingOllama(OLLAMA_URL).then((reachable) => {
       if (cancelled) return;
       // Settled either way: staying on the mock because nothing is
       // reachable is an answer, and anything waiting on the provider
@@ -1025,6 +1098,7 @@ function Workspace({
       const entry = catalog?.entries.find((e) => e.id === modelId);
       setProvider(
         new OllamaAdapter({
+          baseUrl: OLLAMA_URL,
           modelId,
           modelLabel: `Ollama: ${modelId}`,
           contextWindow: entry?.contextWindow,
@@ -1386,7 +1460,23 @@ function Workspace({
             taskType={taskType}
             onTaskTypeChange={setTaskType}
             instructions={instructions}
-            onInstructionsChange={setInstructions}
+            onInstructionsChange={(value) => {
+              setInstructions(value);
+              // Once edited, the text is the user's rather than the
+              // skill's, so the "from this project" warning no longer
+              // describes it.
+              if (activeSkill && value !== activeSkill.instructions) setActiveSkill(null);
+            }}
+            skills={
+              <SkillPicker
+                skills={skills}
+                problems={skillProblems}
+                onUse={applySkill}
+                onSave={saveSkill}
+                canSave={instructions.trim().length > 0}
+                active={activeSkill}
+              />
+            }
             onSubmit={handleRunTask}
             statusMessage={statusMessage}
             result={result}

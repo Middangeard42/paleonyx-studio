@@ -5,12 +5,20 @@ const PREVIEW_WINDOW_LABEL = "preview";
 /**
  * Opens the running project in its own window.
  *
- * The label matters. Capabilities in `capabilities/default.json` are
- * granted to `windows: ["main"]`, so a window labelled anything else
- * gets no permissions at all — it cannot invoke a single command. That
- * is the point: this window renders the user's project, which is often
- * code a model proposed and nobody has read closely, and it must be
- * able to reach nothing.
+ * This window renders the user's project, which is often code a model
+ * proposed and nobody has read closely, so it must not be able to call
+ * the app. What guarantees that is where the page comes from, not what
+ * the window is called: it is served from the preview server's own
+ * origin, and Tauri grants a capability to a remote origin only when that
+ * capability lists it. None does, so every command is refused.
+ *
+ * Established by experiment rather than assumed. The end-to-end suite
+ * calls `read_project_file` from this window and expects a refusal; that
+ * held even with this label added to the main capability's windows,
+ * which is what showed the label was not the protection. Keeping the
+ * label out of that list is still right — it costs nothing — but the
+ * rule to preserve is: never add the preview server's address to a
+ * capability's `remote` URLs.
  *
  * Focuses the existing window rather than stacking duplicates, which is
  * what pressing the button twice should do.

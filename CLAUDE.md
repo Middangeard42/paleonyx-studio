@@ -337,6 +337,19 @@ product's core trust promise breaks.
 - Deciding *whether* a command may run is policy and lives in
   `agent-core`. The shell's `run_command` is mechanism only and does not
   consult the allowlist — one auditable place for the decision.
+- **Skills describe a task and nothing more** (`packages/skills`). A skill
+  file may set `name`, `title`, `description`, and `task`, and the parser
+  rejects any other field by name. Project skills come from the
+  repository, which is often someone else's, so a skill must never be a
+  way to change the permission mode, the command allowlist, a budget, or
+  which files are targeted. Three further rules hold that line:
+  - Choosing a skill fills the task form; it never runs. The words about
+    to reach the model are in front of the user, editable, with Run
+    between them and the model — and a project skill is labelled as one.
+  - A project skill never replaces a built-in of the same name. Both are
+    listed, by source; a repository quietly redefining "Look for bugs" is
+    not something a user would think to check.
+  - A skill file that fails to parse is reported, never skipped silently.
 - **Budgets are enforced in `agent-core`, not just displayed in the UI.**
   Max file writes, max commands, max tokens per session are hard stops —
   when hit, the agent pauses and escalates (see §7), it does not
@@ -389,6 +402,30 @@ product's core trust promise breaks.
   against the real desktop shell — propose diffs, apply, undo; switch
   permission modes; switch models — before any release is considered
   shippable.
+  - Lives in `apps/desktop/e2e`, run with `pnpm --filter @paleonyx/desktop
+    e2e`. Windows-only: it drives WebView2 over the Chrome DevTools
+    protocol, opened by the `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`
+    environment variable for the test process alone. No WebDriver, no
+    driver binary to match to the installed runtime, and `Input.*` gives
+    real trusted clicks that reach the sandboxed preview frame.
+  - Everything that would touch the user's setup is redirected: a
+    throwaway WebView2 profile, a temporary git repository, and a scripted
+    Ollama reached through `VITE_PALEONYX_OLLAMA_URL`, which only a
+    development build honours.
+  - The journeys share one running app and run in order. When a run fails,
+    read the **first** failure — later ones are often the app being left
+    in a state the next journey did not expect.
+  - A new e2e test is not done until it has been seen to fail against the
+    bug it guards. Several here were verified by putting the bug back.
+- **`packages/agent-core` integration**: `pipeline.integration.test.ts`
+  drives the real `OllamaAdapter` against a scripted fake over Ollama's
+  wire format, then applies and undoes through `vcs`. Use it rather than
+  `MockAdapter` for anything that crosses the adapter boundary —
+  `MockAdapter` never serializes a request, which is where the worst bugs
+  so far lived.
+- **`packages/runtime` contract**: `adapters/contract.ts` is the suite
+  every adapter runs. A new adapter is added there, not given its own
+  copy of the tests.
 - Any non-trivial agent-driven code change in this repo runs lint + the
   relevant package's test suite before being considered complete; this is
   a hard requirement, not a suggestion, for agent-authored commits
