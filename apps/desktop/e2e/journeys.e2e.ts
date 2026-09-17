@@ -5,13 +5,14 @@ import {
   CONTEXT_MARKER,
   FIXTURE_BUTTON_CENTRE,
   FIXTURE_SUM,
+  NOTES_MARKER,
   by,
   launchApp,
   readRef,
   sleep,
 } from "./app.js";
 import type { AppUnderTest, Point } from "./app.js";
-import { FAKE_MODEL } from "./fake-ollama-server.js";
+import { FAKE_MODEL, TOOLS_MODEL, TOOLS_MODEL_CALL } from "./fake-ollama-server.js";
 
 /**
  * Critical journeys against the real desktop shell (CLAUDE.md §8).
@@ -53,6 +54,7 @@ const FIX = {
 const HISTORY_REF = "refs/paleonyx/history";
 
 const REFACTOR_PLACEHOLDER = "What should be restructured, and what's wrong with it now?";
+const EXPLAIN_PLACEHOLDER = "What would you like explained about the selected file(s)?";
 
 /** A change that creates a file two folders deep, neither of which exists. */
 const CREATE_HELPERS = {
@@ -376,6 +378,104 @@ describe.skipIf(process.platform !== "win32")("desktop journeys", () => {
     }
   });
 
+  /**
+   * The fixture's `.paleonyx/mcp.json` lists a server. A repository is
+   * often someone else's, so listing a program must not be enough to
+   * run it: it waits for the user's OK, and then for a mode in which the
+   * agent may use it.
+   */
+  it("starts a project's MCP server only once allowed, and in a mode that can use it", async () => {
+    const { page } = app;
+    await page.click(
+      by.label("Connected tools"),
+      "the Connected tools panel",
+      `document.body.innerText.includes("Needs your OK")`
+    );
+    expect(await page.text()).toContain("node notes-server.mjs");
+
+    // A mode that could use it is not enough on its own.
+    await switchMode("Can run commands", true);
+    await sleep(1000);
+    expect(await notesEvents()).toEqual([]);
+    expect(await page.text()).toContain("Needs your OK");
+
+    await page.click(
+      by.text("button", "Allow"),
+      "Allow",
+      `document.body.innerText.includes("Running · 1 of 1 tool on")`
+    );
+    expect(await notesEvents()).toEqual([{ event: "started" }]);
+    expect(await page.text()).toContain("Looks up the team's notes on a topic.");
+  });
+
+  /**
+   * Switching models, and the whole path an MCP tool call takes: a model
+   * that calls tools asks for it, the shell's server runs it, and its
+   * answer goes back to the model — with what was sent shown to the user.
+   */
+  it("hands an allowed tool to a model that can call it, and shows what was sent", async () => {
+    const { page } = app;
+    await page.click(by.label("Models"), "the Models panel", `document.body.innerText.includes("${TOOLS_MODEL}")`);
+    await page.click(
+      modelButton(TOOLS_MODEL),
+      "the tool-calling model",
+      `document.body.innerText.includes("Ollama: ${TOOLS_MODEL}")`
+    );
+    await page.click(by.label("Files"), "the Files panel", `Boolean(${by.text("button", "Explain")})`);
+    await page.click(
+      by.text("button", "Explain"),
+      "the Explain task",
+      `(${by.text("button", "Explain")})?.getAttribute("aria-checked") === "true"`
+    );
+    await page.type(by.placeholder(EXPLAIN_PLACEHOLDER), "What do the team's notes say about sum?", "the task box");
+
+    const chatsBefore = app.ollama.chats.length;
+    await page.click(
+      by.text("button", "Run"),
+      "the Run button",
+      `document.body.innerText.includes("Used lookup (notes)")`
+    );
+
+    const calls = (await notesEvents()).filter((entry) => entry.event === "call");
+    expect(calls).toEqual([{ event: "call", name: "lookup", arguments: { topic: "sum" } }]);
+
+    const sent = app.ollama.chats.slice(chatsBefore);
+    const offered = (sent[0]?.tools ?? []).map((tool) => tool.function.name);
+    expect(offered).toContain(TOOLS_MODEL_CALL.name);
+    const answer = sent.flatMap((chat) => chat.messages).find((message) => message.role === "tool");
+    expect(answer?.content).toContain(NOTES_MARKER);
+    expect(answer?.tool_name).toBe(TOOLS_MODEL_CALL.name);
+
+    await page.click(
+      by.textContaining("button", "Used lookup (notes)"),
+      "the tool step",
+      `document.body.innerText.includes('"topic": "sum"')`
+    );
+  });
+
+  it("stops the server when the mode no longer allows it", async () => {
+    const { page } = app;
+    await switchMode("Suggest-only", false);
+    await waitForDisk(
+      async () => (await notesEvents()).some((entry) => entry.event === "stopped"),
+      "the server to stop"
+    );
+    await page.click(
+      by.label("Connected tools"),
+      "the Connected tools panel",
+      `document.body.innerText.includes("Allowed — not running")`
+    );
+
+    // Back to the model the remaining journeys were written against.
+    await page.click(by.label("Models"), "the Models panel", `document.body.innerText.includes("${FAKE_MODEL}")`);
+    await page.click(
+      modelButton(FAKE_MODEL),
+      "the completion-only model",
+      `document.body.innerText.includes("Ollama: ${FAKE_MODEL}")`
+    );
+    await page.click(by.label("Files"), "the Files panel", `document.body.innerText.includes("sum.js")`);
+  });
+
   it("keeps a dragged panel width after reopening the project", async () => {
     const { page } = app;
     const handle = by.label("Resize the file panel");
@@ -401,6 +501,48 @@ describe.skipIf(process.platform !== "win32")("desktop journeys", () => {
   });
 
   // --- helpers ---------------------------------------------------------
+
+  /** A model's row in the Models panel; both fakes are installed. */
+  function modelButton(name: string): string {
+    return `[...document.querySelectorAll("button")].find((e) => e.textContent.startsWith(${JSON.stringify(`${name}Installed`)}))`;
+  }
+
+  /** What the fixture's MCP server has recorded, oldest first. */
+  async function notesEvents(): Promise<Record<string, unknown>[]> {
+    const text = await readFile(app.notesLog, "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return "";
+      throw error;
+    });
+    return text
+      .split("\n")
+      .filter((line) => line.trim())
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  }
+
+  /** Changes the permission mode from the status bar, confirming a raise. */
+  async function switchMode(label: string, raising: boolean): Promise<void> {
+    const { page } = app;
+    await page.click(
+      `[...document.querySelectorAll("[aria-label]")].find((e) => e.getAttribute("aria-label").startsWith("Permission mode:"))`,
+      "the permission mode indicator",
+      `Boolean(${by.css('[role="radiogroup"][aria-label="Permission mode"]')})`
+    );
+    const option = `[...document.querySelectorAll('[role="radio"]')].find((e) => e.textContent.startsWith(${JSON.stringify(label)}))`;
+    if (raising) {
+      await page.click(option, `the ${label} option`, `Boolean(${by.text("button", "Switch")})`);
+      await page.click(
+        by.text("button", "Switch"),
+        "Switch",
+        `(document.querySelector('[aria-label^="Permission mode:"]')?.getAttribute("aria-label") ?? "").includes(${JSON.stringify(label)})`
+      );
+    } else {
+      await page.click(
+        option,
+        `the ${label} option`,
+        `(document.querySelector('[aria-label^="Permission mode:"]')?.getAttribute("aria-label") ?? "").includes(${JSON.stringify(label)})`
+      );
+    }
+  }
 
   /** A numeric reading taken once it holds still across two looks. */
   async function settledNumber(expression: string): Promise<number> {

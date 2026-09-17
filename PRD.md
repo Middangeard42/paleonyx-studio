@@ -235,6 +235,18 @@ what's excluded is building a full teaching-curriculum product around them.
   the explicit, visible action that satisfies CLAUDE.md §4's local-first
   default; keys are never stored in plaintext (CLAUDE.md §4).
 - MCP tool integration for extending agent capability.
+  Status: built for servers that run on this computer. A project lists
+  them in `.paleonyx/mcp.json`, in the `mcpServers` format Claude Desktop
+  and Cursor use, so a server's own setup instructions can be pasted in.
+  Nothing starts until the user allows the exact command, and a server
+  runs only while the project is set to *Can run commands*, since its
+  tools act outside the diff and the undo history. The user switches
+  tools on and off one by one, and a tool a server adds later starts off.
+  The client speaks both the current protocol (2026-07-28) and the older
+  handshake one most servers still use. Not built: servers reached over
+  the network (new egress, which needs its own visible opt-in first); a
+  user-wide server list; resources and prompts, which are MCP features
+  beyond tools; and a confirmation before each individual tool call.
 - Simple skill system: reusable task templates/workflows.
   Status: templates are built. Six ship with the app, one per task type
   plus a security review; a project adds its own as Markdown files in

@@ -250,6 +250,11 @@ Rules for this structure:
   a file outside the project leaks when the guard is removed.
 - It starts only when the user opens the panel, and is not a general
   static server: no directory listings, no upload, no configuration.
+- Two Windows behaviours it has already been bitten by, each with a
+  test: an accepted socket inherits the listener's non-blocking mode, so
+  connections are switched back to blocking before being read; and
+  `TcpStream::try_clone` returns an *inheritable* socket, so a process
+  started meanwhile held the connection open. Never clone a socket here.
 - *What* to preview is decided in TypeScript (`findPreviewEntry`), not
   in the server, for the same reason the command allowlist lives in
   `agent-core` — the shell is mechanism, and judgement belongs where it
@@ -350,6 +355,42 @@ product's core trust promise breaks.
     listed, by source; a repository quietly redefining "Look for bugs" is
     not something a user would think to check.
   - A skill file that fails to parse is reported, never skipped silently.
+- **Connected tools (MCP) are commands by another name**
+  (`packages/mcp-client`). A server is a program the app starts, and its
+  tools do whatever that program does — outside the diff, outside the
+  undo history. They clear the same bar as commands, and a few more:
+  - **Listing a server never starts it.** Servers come from the
+    project's `.paleonyx/mcp.json` (the `mcpServers` format other clients
+    use). The user approves the exact command, arguments and environment;
+    any change to them voids the approval. The file cannot approve
+    anything itself — `autoApprove`, `alwaysAllow` and `trust` are
+    refused by name, like a skill's `permission:`.
+  - **Approved is not enough.** A server runs only while the project is
+    in *Can run commands*, and `investigate` offers connected tools only
+    in that mode. Leaving the mode stops the server.
+  - **Tools are chosen one by one.** The first list a server reports
+    after approval is switched on; a tool that appears later starts off.
+  - **A connected tool never takes a built-in's name.** `investigate`
+    drops one that does, and `offeredTools` drops, and reports, any two
+    whose model-facing names collide.
+  - **What a server says is untrusted text.** Descriptions are labelled
+    with their server and capped; results are capped; the prompt says
+    neither is an instruction; every call is recorded with its
+    arguments, shown to the user as "Sent".
+  - **Local servers only.** A server reached over the network is new
+    egress under §4 and needs its own visible opt-in before it is built.
+  - Known limits, recorded rather than implied away: a tool's
+    description is not pinned, so a server update can change what an
+    enabled tool says about itself; there is no confirmation before each
+    call — the mode and the per-tool switch are the gate.
+- **Every process the app starts goes through `src-tauri/src/process.rs`.**
+  A bare program name is looked up on `PATH` only, never in the project
+  folder — a repository must not be able to plant its own `npm.cmd` —
+  and `.cmd` shims are found, which `Command::new` alone does not do.
+  Each process tree goes into a Windows job object, so ending it ends
+  everything it started, and the app's exit ends it too. Commands that
+  wait on a process are `#[tauri::command(async)]`: a plain command runs
+  on the main thread.
 - **Budgets are enforced in `agent-core`, not just displayed in the UI.**
   Max file writes, max commands, max tokens per session are hard stops —
   when hit, the agent pauses and escalates (see §7), it does not
@@ -423,6 +464,19 @@ product's core trust promise breaks.
   `MockAdapter` for anything that crosses the adapter boundary —
   `MockAdapter` never serializes a request, which is where the worst bugs
   so far lived.
+- **`packages/mcp-client`**: `testing/scripted-server.ts` plays an MCP
+  server of either protocol generation, including the awkward habits of
+  real ones — answering the discovery probe with an error, or not at
+  all. The agent-core pipeline test drives the real client against it.
+  The e2e journeys run a real server (`e2e/fixtures/notes-server.mjs`)
+  through the shell.
+- **Rust process tests** use `detached` Node grandchildren. On Windows
+  Node already ends its ordinary children when it exits, so only a
+  detached one shows whether the app ends the whole tree. A test that
+  waits on a process gets a deadline of its own: the failure it looks
+  for is a hang, and a hung test stops the whole run instead of failing.
+  Folders a Rust test needs come from `test_support::ScratchDir`, which
+  removes them; a day of runs without it left thousands in `%TEMP%`.
 - **`packages/runtime` contract**: `adapters/contract.ts` is the suite
   every adapter runs. A new adapter is added there, not given its own
   copy of the tests.

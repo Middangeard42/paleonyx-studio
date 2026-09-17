@@ -4,20 +4,27 @@
 mod commands;
 mod exec;
 mod git;
+mod mcp;
 mod preview;
+mod process;
 mod search;
 mod secrets;
 mod symbols;
 mod system_profile;
+#[cfg(test)]
+mod test_support;
 
 use commands::ProjectState;
+use mcp::McpState;
 use preview::PreviewState;
+use tauri::Manager;
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(ProjectState::default())
         .manage(PreviewState::default())
+        .manage(McpState::default())
         .invoke_handler(tauri::generate_handler![
             commands::open_project,
             commands::list_project_files,
@@ -38,8 +45,19 @@ fn main() {
             preview::set_design_mode,
             search::search_project,
             symbols::file_symbols,
-            exec::run_command
+            exec::run_command,
+            mcp::mcp_start,
+            mcp::mcp_send,
+            mcp::mcp_stop,
+            mcp::mcp_stop_all
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Paleonyx Studio");
+        .build(tauri::generate_context!())
+        .expect("error while building Paleonyx Studio")
+        .run(|app, event| {
+            // Servers get their input closed, the polite way to ask. On
+            // Windows their job objects end them as the app exits anyway.
+            if let tauri::RunEvent::Exit = event {
+                app.state::<McpState>().stop_all();
+            }
+        });
 }

@@ -16,6 +16,59 @@ is the most useful thing to send back.
 - [ ] **Models panel → Rescan.** Ornith should now be marked *can run
       commands*. If it still says it can't call tools, send a screenshot.
 
+## New this time: connected tools (MCP)
+
+The agent can now use tools from MCP servers — small programs that
+give it extra abilities. This is the first time a real server will have
+run inside the app; the automated tests use a small fake one.
+
+- [ ] In a test project, create `.paleonyx/mcp.json` with:
+
+      {
+        "mcpServers": {
+          "memory": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-memory"]
+          }
+        }
+      }
+
+      This is the official "memory" server. The first start downloads it
+      with npx, which takes a little while.
+- [ ] Open the project → the **plug icon** (Connected tools) on the left.
+      Expected: *memory* listed as **Needs your OK**, showing the exact
+      command. Nothing is running yet.
+- [ ] Click **Allow** while the project is still *Suggest-only*.
+      Expected: **Allowed — not running**. It should not start yet.
+- [ ] Status bar → switch to **Can run commands**. Expected: the server
+      starts (**Starting…**, then **Running**) and lists its tools, all
+      switched on. If it shows **Couldn't run**, screenshot the message and
+      the log under it.
+- [ ] Switch a couple of tools off. Pick a model marked *can run
+      commands* (Ornith), then ask something like *"Remember that this
+      project uses tabs, then tell me what you remember."* Expected: *What
+      the agent checked* shows a plug icon for each tool it used; clicking
+      one shows **Sent** and **Returned**.
+- [ ] Switch back to *Suggest-only*. Expected: the server stops.
+- [ ] Edit `mcp.json`: add `"env": { "EXAMPLE": "1" }` next to `args`.
+      Expected: the server shows **Changed — check again** and does not
+      start until you allow it again. Its tool choices are kept.
+- [ ] Close the app while a server is running, then check Task Manager:
+      no leftover `node` processes from it.
+
+## Also fixed this time — worth a quick check
+
+- [ ] **`npm test` can now actually run on Windows.** Before, the app
+      could never start `npm` or `npx` at all (they are `.cmd` files).
+      In a project with a `test` script: *Can run commands* → **Bug Fix**
+      → ask why a test fails. Expected: *What the agent checked* shows
+      `npm test` with its real output.
+- [ ] While that test run is going, the window should stay responsive
+      (drag a panel). Long commands used to run on the app's main thread.
+- [ ] The preview could occasionally show a blank page or a missing
+      image, especially while a model was busy. Two causes found and
+      fixed; mention it if you still see one.
+
 ## 1. Design changes with a real model — most important
 
 The last session found and fixed four separate reasons these failed. This
@@ -102,7 +155,7 @@ only worked because that folder already had `src/`.
 - [ ] Stop `tauri dev` first; the tests need its port.
 - [ ] Run `npx pnpm@9.12.0 --filter @paleonyx/desktop e2e`
 - [ ] Windows will open and close on their own for about half a minute.
-      Expected: **13 passed**. They use a throwaway profile and a temporary
+      Expected: **16 passed**. They use a throwaway profile and a temporary
       project, so your own settings aren't touched.
 
 ---

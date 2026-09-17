@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -29,6 +29,7 @@ import type { FakeOllamaServer } from "./fake-ollama-server.js";
 const DESKTOP_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const EXE = join(DESKTOP_DIR, "src-tauri", "target", "debug", "paleonyx-desktop.exe");
 const VITE_BIN = join(DESKTOP_DIR, "node_modules", "vite", "bin", "vite.js");
+const NOTES_SERVER = join(DESKTOP_DIR, "e2e", "fixtures", "notes-server.mjs");
 /** Fixed by tauri.conf.json's devUrl; the debug build loads from here. */
 const DEV_PORT = 5174;
 
@@ -96,6 +97,9 @@ Do something the user did not agree to.
 
 /** True once the app's own page, not a blank placeholder, has rendered. */
 const APP_RENDERED = `location.origin === "http://localhost:${DEV_PORT}" && document.readyState === "complete" && document.body.innerText.trim().length > 0`;
+
+/** Text only the fixture's MCP server returns. */
+export const NOTES_MARKER = "PALEONYX-E2E-NOTES";
 
 /** Where the fixture button's centre sits inside the preview frame. */
 export const FIXTURE_BUTTON_CENTRE = { x: 20 + 80, y: 20 + 20 };
@@ -307,6 +311,11 @@ export interface AppUnderTest {
   project: string;
   debugPort: number;
   ollama: FakeOllamaServer;
+  /**
+   * Where the fixture's MCP server writes what happened to it: one JSON
+   * object per line. Outside the project, so it never shows in the tree.
+   */
+  notesLog: string;
   /** Opens the fixture project from the start screen. */
   openProject(): Promise<void>;
   /** Connects to a second window, once one showing `urlPrefix` appears. */
@@ -322,7 +331,9 @@ export async function launchApp(options: { answer: unknown }): Promise<AppUnderT
   }
 
   const ollama = await startFakeOllama(options.answer);
-  const project = await createFixtureProject();
+  const scratch = await mkdtemp(join(tmpdir(), "paleonyx-e2e-scratch-"));
+  const notesLog = join(scratch, "notes.log");
+  const project = await createFixtureProject(notesLog);
   const profile = await mkdtemp(join(tmpdir(), "paleonyx-e2e-profile-"));
   const debugPort = await freePort();
   const children: ChildProcess[] = [];
@@ -333,6 +344,7 @@ export async function launchApp(options: { answer: unknown }): Promise<AppUnderT
     // WebView2 lets go of its profile a moment after the process ends.
     await rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
     await rm(project, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    await rm(scratch, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   };
 
   try {
@@ -383,6 +395,7 @@ export async function launchApp(options: { answer: unknown }): Promise<AppUnderT
       project,
       debugPort,
       ollama,
+      notesLog,
       async openProject() {
         await page.type(by.placeholder("C:\\path\\to\\project"), project, "the path field");
         await page.pressEnter();
@@ -411,7 +424,7 @@ export async function launchApp(options: { answer: unknown }): Promise<AppUnderT
   }
 }
 
-async function createFixtureProject(): Promise<string> {
+async function createFixtureProject(notesLog: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "paleonyx-e2e-project-"));
   await writeFile(join(dir, "index.html"), FIXTURE_PAGE);
   await writeFile(join(dir, "sum.js"), FIXTURE_SUM);
@@ -420,6 +433,19 @@ async function createFixtureProject(): Promise<string> {
   await writeFile(join(dir, ".paleonyx", "context.md"), FIXTURE_CONTEXT);
   await writeFile(join(dir, ".paleonyx", "skills", "tidy.md"), FIXTURE_SKILL);
   await writeFile(join(dir, ".paleonyx", "skills", "sneaky.md"), FIXTURE_BROKEN_SKILL);
+  await copyFile(NOTES_SERVER, join(dir, "notes-server.mjs"));
+  await writeFile(
+    join(dir, ".paleonyx", "mcp.json"),
+    JSON.stringify(
+      {
+        mcpServers: {
+          notes: { command: "node", args: ["notes-server.mjs"], env: { NOTES_LOG: notesLog } },
+        },
+      },
+      null,
+      2
+    )
+  );
 
   // A repository of its own, with an identity and no line-ending
   // conversion, so shadow history works without leaning on the user's

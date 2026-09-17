@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Boxes, Files, FolderOpen, MonitorPlay, Search, Sparkles } from "lucide-react";
+import { Boxes, Files, FolderOpen, MonitorPlay, Plug, Search, Sparkles } from "lucide-react";
 import {
   ActivityBar,
   AgentPanel,
@@ -8,6 +8,7 @@ import {
   IconButton,
   BYOK_PROVIDERS,
   ByokSection,
+  ConnectedToolsView,
   ModelCatalogView,
   OnboardingFlow,
   Panel,
@@ -102,6 +103,7 @@ import { TauriFileSystem, openProject } from "./tauri-filesystem.js";
 import { openFolderDialog } from "./tauri-dialog.js";
 import { searchProject } from "./tauri-search.js";
 import { runProjectCommand } from "./tauri-exec.js";
+import { useConnectedServers } from "./useConnectedServers.js";
 import { openPreviewWindow } from "./preview-window.js";
 import { fileSymbols } from "./tauri-symbols.js";
 import {
@@ -655,6 +657,9 @@ function Workspace({
     DEFAULT_BUDGET_LIMITS
   );
 
+  /** MCP servers the project lists, and the tools the user let through. */
+  const connected = useConnectedServers({ fs, files, projectRoot, permissionMode });
+
   /**
    * Whether the proposal already failed to fit when it arrived, meaning
    * the model misread the files rather than the user having changed them.
@@ -1190,6 +1195,9 @@ function Workspace({
         // Supplied unconditionally; agent-core decides whether the tool
         // is offered at all, based on the mode and the allowlist.
         runCommand: runProjectCommand,
+        // Likewise: only enabled tools of approved servers are here, and
+        // agent-core offers them only in a mode that can run commands.
+        connectedTools: connected.tools,
         // Lets long files go in as a map of what they contain rather
         // than their whole text.
         getSymbols: fileSymbols,
@@ -1243,12 +1251,33 @@ function Workspace({
             { id: "files", icon: <Files size={16} />, label: "Files" },
             { id: "search", icon: <Search size={16} />, label: "Search" },
             { id: "models", icon: <Boxes size={16} />, label: "Models" },
+            { id: "tools", icon: <Plug size={16} />, label: "Connected tools" },
           ]}
           activeId={activePanel}
           onSelect={setActivePanel}
         />
 
-        {activePanel === "models" ? (
+        {activePanel === "tools" ? (
+          <div className="min-w-0 flex-1 overflow-auto p-4">
+            <div className="mx-auto max-w-3xl">
+              <ConnectedToolsView
+                configPath={connected.configPath}
+                hasConfig={connected.hasConfig}
+                servers={connected.servers}
+                problems={connected.problems}
+                commandsAllowed={canRunCommands(permissionMode)}
+                modelCanCallTools={provider.model.capabilities.supportsToolCalling}
+                modelLabel={provider.model.label}
+                onAllow={connected.allow}
+                onForget={connected.forget}
+                onStop={connected.stop}
+                onStart={connected.start}
+                onRetry={connected.retry}
+                onToolEnabledChange={connected.setToolEnabled}
+              />
+            </div>
+          </div>
+        ) : activePanel === "models" ? (
           <div className="min-w-0 flex-1 overflow-auto p-4">
             <div className="mx-auto max-w-3xl">
               {profileError && (

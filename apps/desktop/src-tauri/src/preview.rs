@@ -163,6 +163,12 @@ fn handle_connection(
     root: &Path,
     design_mode: &AtomicBool,
 ) -> std::io::Result<()> {
+    // On Windows an accepted socket inherits the listener's non-blocking
+    // mode, and a non-blocking read ignores the timeout below: a request
+    // not yet arrived read as none at all, and the client was sent a 400
+    // or a reset. Blocking, with a timeout, is what this code was written
+    // for.
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(CLIENT_TIMEOUT))?;
     stream.set_write_timeout(Some(CLIENT_TIMEOUT))?;
 
@@ -232,9 +238,13 @@ fn handle_connection(
 /// Reads the request line, refusing anything oversized rather than
 /// buffering it. The remaining headers are ignored: nothing this server
 /// does depends on them.
+///
+/// Reads through a shared reference rather than `try_clone`. On Windows a
+/// cloned socket comes back inheritable, so any process the app started
+/// meanwhile — a test run, an MCP server — kept the connection open for
+/// as long as it lived, and reset it when it ended.
 fn read_request_line(stream: &TcpStream) -> Option<String> {
-    let clone = stream.try_clone().ok()?;
-    let mut reader = BufReader::new(clone.take(MAX_REQUEST_BYTES));
+    let mut reader = BufReader::new(Read::take(stream, MAX_REQUEST_BYTES));
     let mut request_line = String::new();
     if reader.read_line(&mut request_line).ok()? == 0 {
         return None;
@@ -408,15 +418,10 @@ fn respond_status(stream: &mut TcpStream, code: u16, reason: &str) -> std::io::R
 #[cfg(test)]
 mod tests {
     use super::*;
+    pub(super) use crate::test_support::ScratchDir;
 
-    pub(super) fn unique_dir(tag: &str) -> PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir = std::env::temp_dir().join(format!("paleonyx-preview-{tag}-{nanos}"));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    pub(super) fn unique_dir(tag: &str) -> ScratchDir {
+        ScratchDir::new(&format!("paleonyx-preview-{tag}"))
     }
 
     /// Starts a server over a real socket and returns its port, so the
@@ -458,6 +463,76 @@ mod tests {
         assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
         assert!(response.contains("text/html"), "{response}");
         assert!(response.contains("<h1>hello</h1>"), "{response}");
+    }
+
+    /// A browser does not always send its request the instant it
+    /// connects — least of all on a machine busy running a model. The
+    /// server has to wait for it, not answer whatever it finds at once.
+    #[test]
+    fn waits_for_a_request_that_arrives_late() {
+        let root = unique_dir("late");
+        std::fs::write(root.join("index.html"), "<p>late</p>").unwrap();
+        let port = serve(&root);
+
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        stream
+            .write_all(b"GET /index.html HTTP/1.1\r\nHost: x\r\n\r\n")
+            .unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).unwrap();
+        let response = String::from_utf8_lossy(&response);
+        assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
+    }
+
+    /// A process the app starts must not walk off with a copy of a
+    /// preview connection. When one did, the page waited for the
+    /// connection to close until that process ended — and was reset if
+    /// it was killed.
+    ///
+    /// Deterministic: half a request line holds the server inside its
+    /// read, which is where the copy used to exist, and the process is
+    /// started right then.
+    #[cfg(windows)]
+    #[test]
+    fn a_process_started_mid_request_does_not_hold_the_connection() {
+        use std::process::{Command, Stdio};
+        use std::time::Instant;
+
+        let root = unique_dir("inherit");
+        std::fs::write(root.join("index.html"), "<p>ok</p>").unwrap();
+        let port = serve(&root);
+
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        stream.write_all(b"GET /index.html HT").unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+
+        // Lives about five seconds unless killed, and is killed below.
+        let mut bystander = Command::new("ping")
+            .args(["-n", "6", "127.0.0.1"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+
+        let started = Instant::now();
+        stream.write_all(b"TP/1.1\r\nHost: x\r\n\r\n").unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let mut response = Vec::new();
+        let read = stream.read_to_end(&mut response);
+        let took = started.elapsed();
+        let _ = bystander.kill();
+        let _ = bystander.wait();
+
+        read.unwrap();
+        assert!(String::from_utf8_lossy(&response).starts_with("HTTP/1.1 200 OK"));
+        assert!(
+            took < Duration::from_secs(2),
+            "the response took {took:?} to end, so the other process held the connection"
+        );
     }
 
     #[test]

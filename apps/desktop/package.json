@@ -15,6 +15,7 @@
     "@paleonyx/agent-core": "workspace:*",
     "@paleonyx/editor": "workspace:*",
     "@paleonyx/indexing": "workspace:*",
+    "@paleonyx/mcp-client": "workspace:*",
     "@paleonyx/runtime": "workspace:*",
     "@paleonyx/shared-types": "workspace:*",
     "@paleonyx/skills": "workspace:*",

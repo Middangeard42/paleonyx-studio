@@ -52,10 +52,16 @@ keyring = { version = "3", features = [
 # report "no GPU detected" until equivalent paths are written; the fit
 # heuristic degrades to CPU-only assessment rather than guessing.
 [target.'cfg(windows)'.dependencies]
+#
+# Job objects, from the same crate: every process the app starts is put
+# in one, so ending it ends everything it started too (src/process.rs).
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
 ] }
 
 [[bin]]

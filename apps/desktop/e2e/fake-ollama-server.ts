@@ -15,16 +15,31 @@ import type { AddressInfo } from "node:net";
  * allows the app's origins the same way.
  */
 
+export interface FakeChat {
+  model: string;
+  messages: { role: string; content: string; tool_name?: string }[];
+  tools?: { function: { name: string } }[];
+}
+
 export interface FakeOllamaServer {
   url: string;
   /** Every chat request received, parsed. */
-  chats: { messages: { role: string; content: string }[] }[];
+  chats: FakeChat[];
   /** Replaces the structured answer the next chat receives. */
   setAnswer(answer: unknown): void;
   close(): Promise<void>;
 }
 
 export const FAKE_MODEL = "fake-model";
+
+/**
+ * A second model, one that calls tools. While gathering, it asks for
+ * `TOOLS_MODEL_CALL` once — if that tool is on offer — then says it has
+ * what it needs. Listed after `FAKE_MODEL`, so it is used only when a
+ * journey picks it.
+ */
+export const TOOLS_MODEL = "fake-tools-model";
+export const TOOLS_MODEL_CALL = { name: "mcp__notes__lookup", arguments: { topic: "sum" } };
 
 export async function startFakeOllama(initialAnswer: unknown): Promise<FakeOllamaServer> {
   const chats: FakeOllamaServer["chats"] = [];
@@ -56,20 +71,49 @@ export async function startFakeOllama(initialAnswer: unknown): Promise<FakeOllam
             capabilities: ["completion"],
             details: { parameter_size: "7B", context_length: 32768 },
           },
+          {
+            name: TOOLS_MODEL,
+            capabilities: ["completion", "tools"],
+            details: { parameter_size: "7B", context_length: 32768 },
+          },
         ],
       });
       return;
     }
 
     if (url.startsWith("/api/show")) {
-      await readBody(request);
-      send(response, { capabilities: ["completion"] });
+      const body = JSON.parse(await readBody(request)) as { model?: string; name?: string };
+      const name = body.model ?? body.name;
+      send(response, {
+        capabilities: name === TOOLS_MODEL ? ["completion", "tools"] : ["completion"],
+      });
       return;
     }
 
     if (url.startsWith("/api/chat")) {
-      const body = JSON.parse(await readBody(request)) as FakeOllamaServer["chats"][number];
+      const body = JSON.parse(await readBody(request)) as FakeChat;
       chats.push(body);
+      const last = body.messages.at(-1);
+      const answering =
+        last?.role === "user" && /^(Now answer|Reply with only the fenced)/.test(last.content);
+      const offered = (body.tools ?? []).some(
+        (tool) => tool.function.name === TOOLS_MODEL_CALL.name
+      );
+      const alreadyCalled = body.messages.some((message) => message.role === "tool");
+
+      if (body.model === TOOLS_MODEL && !answering) {
+        send(response, {
+          message:
+            offered && !alreadyCalled
+              ? { role: "assistant", content: "", tool_calls: [{ function: TOOLS_MODEL_CALL }] }
+              : { role: "assistant", content: "I have what I need." },
+          done: true,
+          prompt_eval_count: 10,
+          eval_count: 10,
+        });
+        return;
+      }
+
       send(response, {
         message: {
           role: "assistant",
