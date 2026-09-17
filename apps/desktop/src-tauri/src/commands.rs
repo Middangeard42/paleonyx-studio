@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 
 /// Holds the currently opened project's root directory. Every read goes
@@ -25,35 +25,52 @@ pub struct ProjectFileDto {
 /// gain any wider filesystem reach by writing than it has by reading
 /// (CLAUDE.md §2).
 pub fn resolve_within_root(root: &Path, requested: &str) -> Result<PathBuf, String> {
+    let outside = || format!("Path '{requested}' is outside the opened project.");
     let canonical_root = root
         .canonicalize()
         .map_err(|e| format!("Could not resolve project root: {e}"))?;
-    let candidate = canonical_root.join(requested);
 
-    // A file being created for the first time has nothing to
-    // canonicalize, so fall back to resolving its parent directory and
-    // re-appending the name. Without this, writing a new file would be
-    // rejected as unresolvable rather than allowed.
-    let canonical_candidate = match candidate.canonicalize() {
-        Ok(resolved) => resolved,
-        Err(_) => {
-            let parent = candidate
-                .parent()
-                .ok_or_else(|| format!("Path '{requested}' has no parent directory."))?;
-            let canonical_parent = parent
-                .canonicalize()
-                .map_err(|e| format!("Could not resolve path '{requested}': {e}"))?;
-            let name = candidate
-                .file_name()
-                .ok_or_else(|| format!("Path '{requested}' has no file name."))?;
-            canonical_parent.join(name)
+    // Only plain relative names. `..` is refused outright rather than
+    // left to canonicalization, because a `..` inside a folder that does
+    // not exist yet cannot be resolved to check where it leads. An
+    // absolute path or drive prefix would replace the root entirely.
+    let relative = Path::new(requested);
+    if !relative
+        .components()
+        .all(|part| matches!(part, Component::Normal(_) | Component::CurDir))
+    {
+        return Err(outside());
+    }
+
+    // Walk up to the nearest part of the path that exists and resolve
+    // that — which also follows any symlink in it — then put the missing
+    // names back. Safe because those names were just checked to be plain.
+    //
+    // The walk is what lets a new file land in a new folder. Resolving
+    // only the immediate parent, as this used to, refused every file in a
+    // folder not yet created: a scaffold into an empty folder, or the
+    // first skill saved to a project.
+    let candidate = canonical_root.join(relative);
+    let mut existing: &Path = &candidate;
+    let mut missing = Vec::new();
+    let resolved = loop {
+        match existing.canonicalize() {
+            Ok(found) => break found,
+            Err(_) => {
+                missing.push(existing.file_name().ok_or_else(outside)?);
+                existing = existing.parent().ok_or_else(outside)?;
+            }
         }
     };
-
-    if !canonical_candidate.starts_with(&canonical_root) {
-        return Err(format!("Path '{requested}' is outside the opened project."));
+    let mut full = resolved;
+    for name in missing.iter().rev() {
+        full.push(name);
     }
-    Ok(canonical_candidate)
+
+    if !full.starts_with(&canonical_root) {
+        return Err(outside());
+    }
+    Ok(full)
 }
 
 #[tauri::command]
@@ -77,17 +94,34 @@ pub fn list_project_files(
     Ok(files)
 }
 
-/// Skips dotfiles and the usual heavy/irrelevant directories. This is
-/// v0's entire "index" (packages/indexing on the TS side does the same
-/// language-tagging pass on top of whatever list this returns) — no file
-/// watching yet, a fresh listing per call.
-fn collect_files(root: &Path, dir: &Path, out: &mut Vec<ProjectFileDto>) -> Result<(), String> {
+/// Hidden folders that are part of the project rather than noise.
+///
+/// Only `.paleonyx`, which holds the project's own context document and
+/// skills. Every other dot-entry stays out — `.git` above all — as before.
+///
+/// This list exists because skipping every dot-entry quietly broke the
+/// first place Paleonyx looks for project guidance: `.paleonyx/context.md`
+/// never appeared in a listing, and the code that finds context documents
+/// only reads what the listing contains. Its unit test used a fake file
+/// system that did list it, so nothing noticed.
+const LISTED_HIDDEN_DIRS: &[&str] = &[".paleonyx"];
+
+/// Skips dotfiles (bar the folders above) and the usual heavy or
+/// irrelevant directories. No file watching yet — a fresh listing per
+/// call; packages/indexing does the language tagging on top.
+pub(crate) fn collect_files(
+    root: &Path,
+    dir: &Path,
+    out: &mut Vec<ProjectFileDto>,
+) -> Result<(), String> {
     for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        if name_str.starts_with('.') || name_str == "node_modules" || name_str == "target" {
+        let hidden = name_str.starts_with('.')
+            && !(path.is_dir() && LISTED_HIDDEN_DIRS.contains(&name_str.as_ref()));
+        if hidden || name_str == "node_modules" || name_str == "target" {
             continue;
         }
         if path.is_dir() {
@@ -113,4 +147,129 @@ pub fn read_project_file(
     let root = guard.as_ref().ok_or("No project is open.")?;
     let resolved = resolve_within_root(root, &path)?;
     std::fs::read_to_string(&resolved).map_err(|e| format!("Could not read '{path}': {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn listed(files: &[&str]) -> Vec<String> {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("paleonyx-list-{nanos}"));
+        for file in files {
+            let path = root.join(file);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "x").unwrap();
+        }
+        let mut out = Vec::new();
+        collect_files(&root, &root, &mut out).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        let mut paths: Vec<String> = out.into_iter().map(|f| f.path).collect();
+        paths.sort();
+        paths
+    }
+
+    /// The regression: skipping every dot-entry hid the project's own
+    /// context document and skills, so neither ever loaded.
+    #[test]
+    fn lists_the_projects_own_paleonyx_folder() {
+        let paths = listed(&[
+            ".paleonyx/context.md",
+            ".paleonyx/skills/tidy.md",
+            "src/app.ts",
+        ]);
+        assert!(
+            paths.contains(&".paleonyx/context.md".to_string()),
+            "{paths:?}"
+        );
+        assert!(
+            paths.contains(&".paleonyx/skills/tidy.md".to_string()),
+            "{paths:?}"
+        );
+        assert!(paths.contains(&"src/app.ts".to_string()), "{paths:?}");
+    }
+
+    #[test]
+    fn still_hides_other_hidden_entries() {
+        let paths = listed(&[
+            ".git/HEAD",
+            ".env",
+            ".vscode/settings.json",
+            "node_modules/x/index.js",
+            "src/app.ts",
+        ]);
+        assert_eq!(paths, vec!["src/app.ts".to_string()]);
+    }
+
+    fn empty_root(tag: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("paleonyx-resolve-{tag}-{nanos}"));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    /// The regression: a new file in a folder that does not exist yet was
+    /// refused, which is every scaffold into an empty folder and every
+    /// first skill saved into a project.
+    #[test]
+    fn resolves_a_new_file_in_folders_that_do_not_exist_yet() {
+        let root = empty_root("new-dirs");
+        let resolved = resolve_within_root(&root, "lib/util/helpers.js").unwrap();
+        assert!(resolved.ends_with(Path::new("lib").join("util").join("helpers.js")));
+        assert!(resolved.starts_with(root.canonicalize().unwrap()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `..` through a folder that does not exist cannot be checked by
+    /// resolving it, so it is refused outright.
+    #[test]
+    fn refuses_to_climb_out_through_a_missing_folder() {
+        let root = empty_root("climb");
+        for requested in [
+            "missing/../../escape.txt",
+            "../escape.txt",
+            "a/b/../../../escape.txt",
+        ] {
+            assert!(
+                resolve_within_root(&root, requested).is_err(),
+                "{requested} was allowed"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn refuses_an_absolute_path() {
+        let root = empty_root("absolute");
+        let outside = std::env::temp_dir().join("elsewhere.txt");
+        assert!(resolve_within_root(&root, &outside.to_string_lossy()).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn still_resolves_an_existing_file() {
+        let root = empty_root("existing");
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/app.ts"), "x").unwrap();
+        let resolved = resolve_within_root(&root, "src/app.ts").unwrap();
+        assert_eq!(
+            resolved,
+            root.canonicalize().unwrap().join("src").join("app.ts")
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Only a folder of that name is let through: a stray file called
+    /// `.paleonyx` is still a dotfile.
+    #[test]
+    fn does_not_list_a_file_merely_named_like_the_folder() {
+        let paths = listed(&[".paleonyx", "src/app.ts"]);
+        assert_eq!(paths, vec!["src/app.ts".to_string()]);
+    }
 }

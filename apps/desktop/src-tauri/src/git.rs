@@ -140,6 +140,13 @@ pub fn write_project_files(
     }
 
     for (path, contents) in resolved {
+        // A new file may sit in folders that do not exist yet. They are
+        // inside the project by construction: `resolve_within_root`
+        // refused anything that was not.
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Could not create {}: {e}", parent.display()))?;
+        }
         std::fs::write(&path, contents)
             .map_err(|e| format!("Could not write {}: {e}", path.display()))?;
     }
