@@ -562,6 +562,5 @@ user-opted-in remote providers.
 
    The repository is public on GitHub, `main` is the default branch, and
    commits carry `support@paleonyx.com` rather than a personal address.
-   Still open: no copyright line names a holder — the owner's call
-   whether that is a legal name, a handle, or "the Paleonyx Studio
-   authors".
+   The copyright line in `README.md` names "Paleonyx" with
+   `support@paleonyx.com`; the owner chose that over a legal name.

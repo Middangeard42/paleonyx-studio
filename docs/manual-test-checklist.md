@@ -164,9 +164,9 @@ only worked because that folder already had `src/`.
 
 - [x] **Licence** — LGPL-3.0-or-later, decided and added. See PRD §10 for
       what it does and does not protect.
-- [ ] **Copyright line** — no file names a copyright holder yet. Tell me
-      whether to use your legal name, your handle, or "the Paleonyx Studio
-      authors". Nothing here uses your real name.
+- [x] **Copyright line** — "Copyright (C) 2026 Paleonyx
+      <support@paleonyx.com>" in the README's Licence section. Nothing here
+      uses your real name.
 - [x] **Commit email** — every commit now uses `support@paleonyx.com`.
       GitHub links commits to an account by their email, so until that
       address is added and verified under GitHub → Settings → Emails,
