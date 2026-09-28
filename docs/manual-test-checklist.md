@@ -174,5 +174,11 @@ only worked because that folder already had `src/`.
 - [x] **Contribution policy** — a DCO, decided. `CONTRIBUTING.md` says how
       to sign off. Nothing enforces it yet: before the first outside
       contribution, decide whether to add a CI check for `Signed-off-by`.
-- [ ] **Web companion over Cloudflare** — which of the three shapes in
-      PRD §10. Needed before that work starts.
+- [x] **Web companion over Cloudflare** — same-machine only for now
+      (PRD §10). A user-started tunnel is a possible later addition.
+- [ ] **Design mode: source-tagging review (end of v1)** — remind the owner.
+      Leaning: React, Angular, Vue.js, Next.js and Svelte first, more on
+      demand (PRD §10). Decide from real use: which frameworks people open,
+      and how often search misses the right element.
+- [x] **Design mode: screenshot option** — deferred to the larger
+      design-mode build (PRD §10).

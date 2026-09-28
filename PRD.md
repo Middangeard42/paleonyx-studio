@@ -504,6 +504,17 @@ user-opted-in remote providers.
    actually use here are known. Reassess before v1 ships: if design mode
    is being used and search is missing elements, this is the fix.
 
+   **Owner's leaning (not a commitment):** support the five most-used UI
+   frameworks first (React, Angular, Vue.js, Next.js, Svelte) and add more
+   as demand appears. Suggested order: React, Next.js, Vue, Svelte,
+   Angular. React and Next.js share most of the work, and a single Vite
+   plugin might carry React, Vue and Svelte. These are recollections and
+   not checked against current framework versions; verify when building.
+   Whatever is built adds attributes to the user's own build, so it needs
+   a visible opt-in, and any plugin it depends on must pass CLAUDE.md §9.
+   Still to do at the review: rank frameworks by what people actually open
+   here, and measure how often search fails.
+
 2. **Web companion transport — Cloudflare, with a local-first question
    attached.** Cloudflare is the intended way to reach the web companion
    (owner's call, recorded here so it is not rediscovered later). What
