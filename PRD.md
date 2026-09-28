@@ -560,7 +560,8 @@ user-opted-in remote providers.
    a contribution policy (a DCO or a CLA) should exist before the first
    one is accepted.
 
-   Still open: the repository has no remote yet, and no copyright line
-   names a holder — the owner's call whether that is a legal name, a
-   handle, or "the Paleonyx Studio authors". Nothing is made public
-   without the owner saying so.
+   The repository is public on GitHub, `main` is the default branch, and
+   commits carry `support@paleonyx.com` rather than a personal address.
+   Still open: no copyright line names a holder — the owner's call
+   whether that is a legal name, a handle, or "the Paleonyx Studio
+   authors".

@@ -1,6 +1,6 @@
 # What to test next time
 
-Everything below is committed on `master`. Items are in priority order —
+Everything below is committed on `main`. Items are in priority order —
 the first three are where a real model and a real folder matter most, and
 where the automated tests can't stand in for you.
 
@@ -167,9 +167,10 @@ only worked because that folder already had `src/`.
 - [ ] **Copyright line** — no file names a copyright holder yet. Tell me
       whether to use your legal name, your handle, or "the Paleonyx Studio
       authors". Nothing here uses your real name.
-- [ ] **Before the repository goes public** — your email address is in all
-      48 of your commits. Either keep it, or rewrite the history to use
-      GitHub's no-reply address. This is cheap now and awkward later.
+- [x] **Commit email** — every commit now uses `support@paleonyx.com`.
+      GitHub links commits to an account by their email, so until that
+      address is added and verified under GitHub → Settings → Emails,
+      commits show your name without a link to your profile.
 - [ ] **Contribution policy** — a DCO or a CLA, before the first outside
       contribution is merged. Otherwise the licence can no longer be
       changed without every contributor's agreement.
