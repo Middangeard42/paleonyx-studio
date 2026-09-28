@@ -510,6 +510,11 @@ product's core trust promise breaks.
   undocumented way to reach the network — it goes through the same
   runtime choke point and the same visible-labeling requirement as every
   other remote call.
+- Don't add a dependency whose licence cannot be combined with
+  LGPL-3.0-or-later: GPL-2.0-only, proprietary or "source-available"
+  terms, or none declared. MIT, Apache-2.0, BSD, ISC, Zlib, Unicode,
+  MPL-2.0, and LGPL are fine. Read the licence when weighing a
+  dependency, the same way you weigh its size (§10 decision 8).
 
 ---
 
@@ -547,3 +552,27 @@ product's core trust promise breaks.
 7. ~~Too-large model default visibility~~ — **Decided: hidden by default,
    UI-level toggle to reveal** (§4.1, DESIGN.md §6.3) — not a catalog-data
    exclusion.
+8. ~~Licence~~ — **Decided: LGPL-3.0-or-later** (owner's choice; PRD.md
+   §10). Text in `COPYING.LESSER`, with the GPL it builds on in
+   `COPYING`. When it was chosen, every dependency (461 Rust crates, 56
+   runtime JavaScript packages) was compatible; §9 keeps it that way.
+
+---
+
+## 11. Working in a Cloud Session
+
+Claude Code can run on this repository in the cloud
+([`docs/cloud-sessions.md`](docs/cloud-sessions.md)). What that means for
+the work:
+
+- `CLAUDE_CODE_REMOTE=true` marks a cloud session. The SessionStart hook
+  in `.claude/settings.json` installs the JavaScript dependencies from it.
+- Run `pnpm lint`, `pnpm typecheck`, and `pnpm test`. Do not try the
+  desktop end-to-end suite, the app, or a live model: they need Windows, a
+  display, or Ollama, and none of those exist there.
+- The Rust shell has not been built on Linux. A change to it made in the
+  cloud is reasoned about, not verified, and should be reported that way
+  rather than as tested. The mutation rule in §8 still applies to
+  whatever can be run.
+- `docs/manual-test-checklist.md` is for the owner, on Windows. A cloud
+  session adds to it; it does not do it.

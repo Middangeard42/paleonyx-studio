@@ -1,0 +1,4 @@
+# Shell scripts run on Linux (cloud sessions, CI). Checked out on Windows
+# with core.autocrlf they would gain carriage returns, and bash then fails
+# on the first line.
+*.sh text eol=lf

@@ -162,7 +162,16 @@ only worked because that folder already had `src/`.
 
 ## Decisions waiting on you
 
-- [ ] **Licence** — MIT, Apache-2.0, GPL-3.0, or AGPL-3.0. This is the only
-      thing blocking publishing to GitHub. See PRD §10.
+- [x] **Licence** — LGPL-3.0-or-later, decided and added. See PRD §10 for
+      what it does and does not protect.
+- [ ] **Copyright line** — no file names a copyright holder yet. Tell me
+      whether to use your legal name, your handle, or "the Paleonyx Studio
+      authors". Nothing here uses your real name.
+- [ ] **Before the repository goes public** — your email address is in all
+      48 of your commits. Either keep it, or rewrite the history to use
+      GitHub's no-reply address. This is cheap now and awkward later.
+- [ ] **Contribution policy** — a DCO or a CLA, before the first outside
+      contribution is merged. Otherwise the licence can no longer be
+      changed without every contributor's agreement.
 - [ ] **Web companion over Cloudflare** — which of the three shapes in
       PRD §10. Needed before that work starts.

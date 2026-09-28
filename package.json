@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Local-first AI IDE — monorepo root",
+  "license": "LGPL-3.0-or-later",
   "packageManager": "pnpm@9.12.0",
   "engines": {
     "node": ">=20"

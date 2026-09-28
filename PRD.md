@@ -531,24 +531,36 @@ user-opted-in remote providers.
    Ko-fi, Open Collective) work with any of them, so that half needs no
    decision here.
 
-   The licence itself is still open, and it is the one choice that is
-   awkward to revisit once contributors have committed under it:
-   - **Permissive (MIT, Apache-2.0).** Widest adoption and the easiest
-     for anyone to build on. Apache-2.0 adds an explicit patent grant
-     that MIT lacks. The trade-off is that a company may ship a closed
-     commercial fork of this and owe nothing.
-   - **Copyleft (GPL-3.0, AGPL-3.0).** A fork that is distributed has to
-     stay open. AGPL extends that to hosted use, which matters here only
-     if the web companion is ever offered as a service.
+   **Licence decided: LGPL-3.0-or-later** (the owner's choice). It is weak
+   copyleft: anyone may use, change, and share the code; a modified
+   version that is distributed must be shared under the same licence; and
+   other software may link to it as a library under its own terms, within
+   the limits of LGPLv3 §4. That is looser than GPL or AGPL, which would
+   also require a whole product built on this code to be open, and
+   tighter than MIT or Apache-2.0, which require nothing. Two things
+   worth knowing rather than discovering later. LGPL is written for
+   libraries, so for an application its practical effect is that a
+   closed-source product may be built on these packages provided changes
+   to the LGPL'd files are shared. And it does not reach hosted use: a
+   company could offer this as a service without releasing its changes.
+   AGPL is what covers that, and it would matter only if the web
+   companion were ever offered as a service.
 
-   No dependency forces the choice — Tauri, Monaco, and the Rust crates
-   in use are all MIT/Apache-2.0, so any of the above is available. This
-   is a judgement about what the project is for, not a legal question
-   with one right answer, and it is worth taking properly rather than
-   defaulting into.
+   Checked when it was chosen: all 461 Rust crates and 56 runtime
+   JavaScript packages are permissive, MPL-2.0, or dual-licensed with a
+   permissive option. None is GPL-only, AGPL, proprietary, or without a
+   licence. CLAUDE.md §9 keeps that true for new dependencies.
 
-   Mechanics still outstanding: there is no remote, the working branch is
-   `master` while the intended default is `main`, and there is no LICENSE
-   file yet — until there is one, the default is exclusive copyright and
-   nobody may legally reuse it, which is the opposite of the intent.
-   Nothing gets pushed without the owner asking.
+   The text is in `COPYING.LESSER`, with the GPL it builds on in
+   `COPYING`, and each manifest carries the SPDX identifier. "Or later"
+   follows the FSF's recommended notice; `LGPL-3.0-only` is a one-line
+   change per manifest until the code is public. As sole copyright holder
+   the owner can still relicense, but once outside contributions are
+   merged that stops being true without each contributor's agreement, so
+   a contribution policy (a DCO or a CLA) should exist before the first
+   one is accepted.
+
+   Still open: the repository has no remote yet, and no copyright line
+   names a holder — the owner's call whether that is a legal name, a
+   handle, or "the Paleonyx Studio authors". Nothing is made public
+   without the owner saying so.

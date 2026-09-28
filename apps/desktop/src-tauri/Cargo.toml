@@ -2,6 +2,7 @@
 name = "paleonyx-desktop"
 version = "0.0.0"
 description = "Paleonyx Studio desktop shell"
+license = "LGPL-3.0-or-later"
 edition = "2021"
 
 [build-dependencies]

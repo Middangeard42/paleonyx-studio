@@ -16,6 +16,9 @@ apps/desktop/src-tauri/gen/schemas/
 !.vscode/extensions.json
 .idea/
 
+# Claude Code: per-machine permissions. The shared settings.json is tracked.
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db
