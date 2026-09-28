@@ -524,6 +524,12 @@ user-opted-in remote providers.
    active — the same bar the model catalog's live refresh clears (§9
    decision 5).
 
+   **Decided for now: same-machine only.** Nothing is built for the other
+   two. A user-initiated tunnel stays a possible later addition behind the
+   visible opt-in described above, and the encrypted relay is deferred
+   until there is demand. Phone access away from the local network is
+   therefore not supported yet.
+
 3. **Publishing to GitHub — open source, with donations.** The owner's
    direction is an open-source project that accepts donations as thanks.
    Donations are independent of the licence: every mainstream open-source
