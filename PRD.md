@@ -491,6 +491,12 @@ user-opted-in remote providers.
    and `source` as optional fields so both remaining routes add data
    rather than replacing the shape.
 
+   **Screenshot option: deferred.** Not built, and not to be built piecemeal.
+   The owner has a larger design-mode build planned, and the screenshot
+   route (capture from the sandboxed frame, and the labeling a remote
+   vision model would need) is designed there, together with the
+   source-tagging review below.
+
    **Revisit at the end of v1: build-time source tagging.** Deferred by
    decision, not dropped — it is the most precise of the three and the
    only one that handles generated markup reliably, but it is
