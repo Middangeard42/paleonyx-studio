@@ -49,6 +49,8 @@ To work on it with Claude Code in the cloud, see
 
 ## Licence
 
+Copyright (C) 2026 Paleonyx <support@paleonyx.com>
+
 Paleonyx Studio is free software, licensed under the GNU Lesser General
 Public License, version 3 or (at your option) any later version. The licence
 is in [COPYING.LESSER](COPYING.LESSER); it adds permissions to the GNU General
