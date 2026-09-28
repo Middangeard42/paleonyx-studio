@@ -558,7 +558,11 @@ user-opted-in remote providers.
    the owner can still relicense, but once outside contributions are
    merged that stops being true without each contributor's agreement, so
    a contribution policy (a DCO or a CLA) should exist before the first
-   one is accepted.
+   one is accepted. **Decided: a DCO.** Contributors keep their copyright
+   and sign off each commit (`git commit -s`), certifying they may submit
+   it under LGPL-3.0-or-later. The consequence is accepted: the licence
+   cannot be changed later without every contributor's agreement, and a
+   CLA cannot be required retroactively. See `CONTRIBUTING.md`.
 
    The repository is public on GitHub, `main` is the default branch, and
    commits carry `support@paleonyx.com` rather than a personal address.

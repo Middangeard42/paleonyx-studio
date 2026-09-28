@@ -171,8 +171,8 @@ only worked because that folder already had `src/`.
       GitHub links commits to an account by their email, so until that
       address is added and verified under GitHub → Settings → Emails,
       commits show your name without a link to your profile.
-- [ ] **Contribution policy** — a DCO or a CLA, before the first outside
-      contribution is merged. Otherwise the licence can no longer be
-      changed without every contributor's agreement.
+- [x] **Contribution policy** — a DCO, decided. `CONTRIBUTING.md` says how
+      to sign off. Nothing enforces it yet: before the first outside
+      contribution, decide whether to add a CI check for `Signed-off-by`.
 - [ ] **Web companion over Cloudflare** — which of the three shapes in
       PRD §10. Needed before that work starts.
