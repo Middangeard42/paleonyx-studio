@@ -570,9 +570,13 @@ the work:
 - Run `pnpm lint`, `pnpm typecheck`, and `pnpm test`. Do not try the
   desktop end-to-end suite, the app, or a live model: they need Windows, a
   display, or Ollama, and none of those exist there.
-- The Rust shell has not been built on Linux. A change to it made in the
-  cloud is reasoned about, not verified, and should be reported that way
-  rather than as tested. The mutation rule in §8 still applies to
-  whatever can be run.
+- With the system libraries from `docs/cloud-sessions.md` installed, the
+  Rust shell builds on Linux: `cargo check --tests`, `cargo test` (50
+  tests; the Windows-only ones compile out), `cargo fmt --check` and
+  `cargo clippy --all-targets -- -D warnings` all pass there. That checks
+  what compiles and runs on Linux only. A change to Windows-only code
+  (`#[cfg(windows)]`, job objects, `.cmd` resolution) is still reasoned
+  about, not verified, and should be reported that way. The mutation rule
+  in §8 still applies to whatever can be run.
 - `docs/manual-test-checklist.md` is for the owner, on Windows. A cloud
   session adds to it; it does not do it.

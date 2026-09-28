@@ -204,6 +204,7 @@ impl Drop for ProcessGroup {
 mod tests {
     use super::*;
     use crate::test_support::ScratchDir;
+    #[cfg(windows)]
     use std::ffi::OsString;
     use std::fs;
 

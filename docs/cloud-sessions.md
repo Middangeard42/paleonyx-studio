@@ -52,12 +52,13 @@ permission choices and must not travel.
 | Desktop end-to-end tests (`pnpm --filter @paleonyx/desktop e2e`) | They drive WebView2, which is Windows-only. They skip themselves elsewhere. |
 | Running the desktop app, or the manual checklist | There is no display and no Windows. |
 | Anything that needs a real model | Ollama is not running there. The tests use scripted fakes. |
-| `cargo test` for the desktop shell, until the system libraries are installed | The shell links against the platform's web view. See below. |
+| `cargo test` for the desktop shell, until the system libraries are installed (Linux tests only) | The shell links against the platform's web view. See below. |
 
-The Rust shell has only ever been built on Windows. Some of its tests are
-Windows-only and compile out elsewhere, but nobody has yet compiled it on
-Linux, so expect the first attempt to turn something up. Running the tests
-on GitHub's Linux and Windows machines would find out; that is not set up.
+The Rust shell was written on Windows. Some of its tests are Windows-only
+and compile out elsewhere. With the libraries below installed it builds on
+Linux, and `cargo test` runs 50 tests there; the first attempt turned up
+one unused import in a test module, since fixed. `.github/workflows/ci.yml`
+runs the tests on GitHub's Linux and Windows machines.
 
 ### Building the Rust shell in the cloud
 
@@ -65,7 +66,8 @@ Add a setup script to the environment (the environment dialog at
 claude.ai/code). It runs before Claude starts and is cached for later
 sessions as long as it finishes in roughly five minutes. These are the
 packages Tauri's own prerequisites page lists for Debian and Ubuntu; the
-cloud image is Ubuntu 24.04. This has not been tried here.
+cloud image is Ubuntu 24.04. Installing them by hand as root in a session
+worked; the setup-script route is untried.
 
 ```sh
 apt-get update
