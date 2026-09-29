@@ -165,3 +165,23 @@ describe("tools versus commands", () => {
     expect(prompt).toMatch(/what no tool covers/i);
   });
 });
+
+describe("how new files are asked for", () => {
+  it("tells the model to write new files as blocks after the JSON", () => {
+    const request = buildAnswerRequest();
+    expect(request).toContain("<<<FILE");
+    expect(request).toContain("FILE>>>");
+  });
+
+  it("asks for a scaffold's files as blocks, with nothing left in the diff", () => {
+    const prompt = buildSystemPrompt("scaffold", "new-to-coding");
+    expect(prompt).toContain("<<<FILE");
+    expect(prompt).not.toContain("every hunk is all `add` lines");
+  });
+
+  it("does not ask for a new file inside the JSON diff", () => {
+    const prompt = buildSystemPrompt("bug-fix", "new-to-coding");
+    expect(prompt).toContain("do not put it in `diff`");
+    expect(prompt).toContain("<<<FILE");
+  });
+});

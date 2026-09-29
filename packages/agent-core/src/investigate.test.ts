@@ -135,6 +135,8 @@ describe("gathering information", () => {
     const outcome = await run(provider);
     expect(outcome.kind).toBe("ready");
     expect(outcome.steps[0]?.ok).toBe(false);
+    // Told outright, so it does not spend its calls on the same path.
+    expect(outcome.steps[0]?.detail).toContain("Do not try to read missing.ts again");
   });
 
   it("stops at the iteration cap rather than looping forever", async () => {

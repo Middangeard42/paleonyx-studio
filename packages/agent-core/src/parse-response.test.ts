@@ -115,3 +115,57 @@ describe("parseAgentResponse", () => {
     expect(result.ok).toBe(false);
   });
 });
+
+describe("new files written as blocks rather than as JSON", () => {
+  const HEAD =
+    '```json\n{"summary": "s", "steps": [], "explanation": "e", "diff": [], "confidence": "high"}\n```\n';
+
+  // A new file as one JSON object per line gave a small model a 200-line
+  // array to keep balanced, and it lost a bracket. As plain text there is
+  // nothing to balance.
+  it("turns a file block into an all-add diff for a new file", () => {
+    const text = `${HEAD}<<<FILE calculator.py
+import tkinter as tk
+print("hi")
+FILE>>>`;
+    const result = parseAgentResponse(text);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const file = result.value.diff[0];
+    expect(file?.filePath).toBe("calculator.py");
+    const lines = file?.hunks[0]?.lines ?? [];
+    expect(lines.every((l) => l.type === "add")).toBe(true);
+    expect(lines.map((l) => l.content).join("\n")).toBe('import tkinter as tk\nprint("hi")\n');
+    expect(file?.hunks[0]?.header).toBe("@@ -0,0 +1,3 @@");
+  });
+
+  it("keeps code that looks like JSON or a fence exactly as written", () => {
+    const body = 'data = {"a": [1, 2,]}\n```\nend';
+    const result = parseAgentResponse(`${HEAD}<<<FILE notes.md\n${body}\nFILE>>>`);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const content = (result.value.diff[0]?.hunks[0]?.lines ?? []).map((l) => l.content).join("\n");
+    expect(content).toBe(`${body}\n`);
+  });
+
+  it("reads several files, and works when the JSON leaves out diff", () => {
+    const head =
+      '```json\n{"summary": "s", "steps": [], "explanation": "e", "confidence": "high"}\n```\n';
+    const result = parseAgentResponse(
+      `${head}<<<FILE a.py\nx = 1\nFILE>>>\n\n<<<FILE b/README.md\n# b\nFILE>>>`
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.diff.map((d) => d.filePath)).toEqual(["a.py", "b/README.md"]);
+  });
+
+  it("refuses a file block that never ends, rather than keeping half a file", () => {
+    const result = parseAgentResponse(`${HEAD}<<<FILE a.py\nx = 1\ny = `);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("a.py");
+  });
+
+  it("refuses a file block with no path", () => {
+    const result = parseAgentResponse(`${HEAD}<<<FILE \nx\nFILE>>>`);
+    expect(result.ok).toBe(false);
+  });
+});

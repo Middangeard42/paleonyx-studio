@@ -233,7 +233,9 @@ async function runTool(
       return {
         tool: call.name,
         summary: `Could not read ${path}`,
-        detail: error instanceof Error ? error.message : String(error),
+        // Said outright: a model that only sees a bare error tries the
+        // same path again, and again, spending its tool calls.
+        detail: `${error instanceof Error ? error.message : String(error)}. Do not try to read ${path} again. If it is a file you mean to create, it not existing yet is expected.`,
         ok: false,
       };
     }
