@@ -38,4 +38,10 @@ export interface SearchResults {
   truncated: boolean;
   /** Total matches found, which may exceed what `files` carries. */
   totalMatches: number;
+  /**
+   * Files that matched but cannot be listed, because their names are not
+   * valid text. Not in `files` or in `totalMatches`; reported so that a
+   * search which came up short of them does not read as complete.
+   */
+  skippedNames: number;
 }

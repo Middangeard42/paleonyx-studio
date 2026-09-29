@@ -122,7 +122,7 @@ import {
 import {
   deleteProviderKey,
   getProviderKey,
-  loadKeyedProviderIds,
+  loadKeyedProviders,
   setProviderKey,
 } from "./tauri-secrets.js";
 
@@ -180,9 +180,12 @@ export function App() {
     false
   );
   const [keyedProviderIds, setKeyedProviderIds] = useState<string[]>([]);
+  const [keyStoreProblem, setKeyStoreProblem] = useState<string | null>(null);
 
   const refreshKeyedProviders = useCallback(async () => {
-    setKeyedProviderIds(await loadKeyedProviderIds());
+    const keyed = await loadKeyedProviders();
+    setKeyedProviderIds(keyed.ids);
+    setKeyStoreProblem(keyed.problem);
   }, []);
 
   useEffect(() => {
@@ -318,6 +321,7 @@ export function App() {
     selectedModelId,
     setSelectedModelId,
     keyedProviderIds,
+    keyStoreProblem,
     onAddKey: handleAddKey,
     onRemoveKey: handleRemoveKey,
     refreshCatalog,
@@ -438,6 +442,7 @@ interface ModelsState {
   selectedModelId: string | null;
   setSelectedModelId: (id: string | null) => void;
   keyedProviderIds: string[];
+  keyStoreProblem: string | null;
   onAddKey: (providerId: string, key: string) => Promise<void>;
   onRemoveKey: (providerId: string) => Promise<void>;
   refreshCatalog: () => Promise<void>;
@@ -571,6 +576,7 @@ function Workspace({
     selectedModelId,
     setSelectedModelId,
     keyedProviderIds,
+    keyStoreProblem,
     onAddKey: handleAddKey,
     onRemoveKey: handleRemoveKey,
     refreshCatalog,
@@ -1024,7 +1030,7 @@ function Workspace({
     } catch {
       // An unreadable tree is not worth an error banner in a panel whose
       // empty state already reads as "nothing found".
-      setSearchResults({ files: [], truncated: false, totalMatches: 0 });
+      setSearchResults({ files: [], truncated: false, totalMatches: 0, skippedNames: 0 });
     } finally {
       setSearching(false);
     }
@@ -1322,6 +1328,7 @@ function Workspace({
                   />
                   <ByokSection
                     keyedProviderIds={keyedProviderIds}
+                    storeProblem={keyStoreProblem}
                     onAddKey={handleAddKey}
                     onRemoveKey={handleRemoveKey}
                   />

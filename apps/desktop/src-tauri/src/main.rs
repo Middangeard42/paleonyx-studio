@@ -17,6 +17,7 @@ mod test_support;
 use commands::ProjectState;
 use mcp::McpState;
 use preview::PreviewState;
+use std::time::Duration;
 use tauri::Manager;
 
 fn main() {
@@ -54,10 +55,11 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building Paleonyx Studio")
         .run(|app, event| {
-            // Servers get their input closed, the polite way to ask. On
-            // Windows their job objects end them as the app exits anyway.
+            // Servers get their input closed, the polite way to ask, and
+            // a moment to act on it; then whatever is left is ended.
             if let tauri::RunEvent::Exit = event {
-                app.state::<McpState>().stop_all();
+                app.state::<McpState>()
+                    .shutdown(Duration::from_millis(1500));
             }
         });
 }

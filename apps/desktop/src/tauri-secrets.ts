@@ -27,16 +27,32 @@ export async function getProviderKey(providerId: string): Promise<string | null>
   return invoke<string | null>("get_provider_key", { provider: providerId });
 }
 
-/** Which providers are connected, for rendering the settings list. */
-export async function loadKeyedProviderIds(): Promise<string[]> {
+export interface KeyedProviders {
+  /** Which providers have a key stored, for rendering the settings list. */
+  ids: string[];
+  /** Why the credential store could not be checked, or null when it could. */
+  problem: string | null;
+}
+
+export async function loadKeyedProviders(): Promise<KeyedProviders> {
   const checks = await Promise.all(
-    BYOK_PROVIDERS.map(async (provider) => ({
-      id: provider.id,
-      // A credential store that cannot be read is a real failure, but not
-      // one worth blocking the whole Models screen over: treat it as
-      // "no key" so local models stay usable.
-      hasKey: await hasProviderKey(provider.id).catch(() => false),
-    }))
+    BYOK_PROVIDERS.map(async (provider) => {
+      try {
+        return { id: provider.id, hasKey: await hasProviderKey(provider.id), problem: null };
+      } catch (error) {
+        // An unusable store is a real failure, but not one worth blocking
+        // the whole Models screen over: no key is listed, so local models
+        // stay usable, and the reason is passed on to be shown.
+        return {
+          id: provider.id,
+          hasKey: false,
+          problem: error instanceof Error ? error.message : String(error),
+        };
+      }
+    })
   );
-  return checks.filter((check) => check.hasKey).map((check) => check.id);
+  return {
+    ids: checks.filter((check) => check.hasKey).map((check) => check.id),
+    problem: checks.find((check) => check.problem !== null)?.problem ?? null,
+  };
 }

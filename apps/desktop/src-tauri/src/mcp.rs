@@ -48,6 +48,9 @@ type Sink = Arc<dyn Fn(McpEvent) + Send + Sync>;
 struct Server {
     stdin: Arc<Mutex<Option<ChildStdin>>>,
     stop: Arc<AtomicBool>,
+    /// Shared with the thread supervising the server, so that the app can
+    /// end the whole tree as it exits without waiting for that thread.
+    group: Arc<ProcessGroup>,
 }
 
 impl Server {
@@ -76,6 +79,31 @@ impl McpState {
         if let Ok(servers) = self.servers.lock() {
             for server in servers.values() {
                 server.request_stop();
+            }
+        }
+    }
+
+    /// What the app does as it exits: asks every server to stop, gives them
+    /// `wait` to do it, and ends whatever is left, with everything each one
+    /// started.
+    ///
+    /// Asking is not enough on its own. The app exits right after, taking
+    /// the threads that would have ended a server once its grace period ran
+    /// out. On Windows the job objects end the servers anyway; elsewhere
+    /// nothing else would, and a server that ignores the request (or one
+    /// started through `npx`, whose child keeps running) outlived the app.
+    pub fn shutdown(&self, wait: Duration) {
+        self.stop_all();
+        let deadline = Instant::now() + wait;
+        while Instant::now() < deadline {
+            if self.servers.lock().map(|s| s.is_empty()).unwrap_or(true) {
+                return;
+            }
+            std::thread::sleep(POLL);
+        }
+        if let Ok(servers) = self.servers.lock() {
+            for server in servers.values() {
+                server.group.kill();
             }
         }
     }
@@ -123,11 +151,13 @@ impl McpState {
 
         let id = self.next_id.fetch_add(1, Ordering::SeqCst) + 1;
         let stop = Arc::new(AtomicBool::new(false));
+        let group = Arc::new(group);
         self.servers.lock().map_err(|e| e.to_string())?.insert(
             id,
             Server {
                 stdin: Arc::new(Mutex::new(Some(stdin))),
                 stop: stop.clone(),
+                group: group.clone(),
             },
         );
 
@@ -595,6 +625,46 @@ mod tests {
         let (_, rx) = start(&state, script, Duration::from_secs(10));
         let (exit_code, _) = closed(&rx, Duration::from_secs(8));
         assert_eq!(exit_code, Some(0));
+    }
+
+    /// The app exiting must end its servers, even ones that ignore the
+    /// request to stop. The grace period here is far longer than the test
+    /// waits, so only `shutdown` itself can end them in time.
+    #[cfg(unix)]
+    #[test]
+    fn shutting_down_ends_a_server_that_ignores_the_request_to_stop() {
+        let state = McpState::default();
+        let (_, rx) = start(
+            &state,
+            "setInterval(() => {}, 1000)",
+            Duration::from_secs(60),
+        );
+        std::thread::sleep(Duration::from_millis(300));
+        state.shutdown(Duration::from_millis(300));
+        closed(&rx, Duration::from_secs(5));
+    }
+
+    /// Including what it started, which holds the server's output open.
+    #[cfg(unix)]
+    #[test]
+    fn shutting_down_ends_what_the_server_started_too() {
+        let state = McpState::default();
+        let script = "require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' }); setInterval(() => {}, 1000)";
+        let (_, rx) = start(&state, script, Duration::from_secs(60));
+        std::thread::sleep(Duration::from_millis(500));
+        state.shutdown(Duration::from_millis(300));
+        closed(&rx, Duration::from_secs(5));
+    }
+
+    /// A server that stops when asked is not made to wait out the limit.
+    #[test]
+    fn shutting_down_does_not_wait_for_a_server_that_stops_promptly() {
+        let state = McpState::default();
+        let (_, rx) = start(&state, ECHO, Duration::from_secs(60));
+        let started = Instant::now();
+        state.shutdown(Duration::from_secs(10));
+        closed(&rx, Duration::from_secs(5));
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 
     #[test]

@@ -16,6 +16,12 @@ export interface ByokSectionProps {
    * of a form that cannot honour what it implies.
    */
   available?: boolean;
+  /**
+   * Why the credential store could not be checked, when it could not. Shown
+   * above the list: without it, an unusable store looks like "no keys yet"
+   * until someone tries to add one and it fails.
+   */
+  storeProblem?: string | null;
 }
 
 /**
@@ -32,6 +38,7 @@ export function ByokSection({
   onAddKey,
   onRemoveKey,
   available = true,
+  storeProblem = null,
 }: ByokSectionProps) {
   return (
     <section className="mt-6 border-t border-border-subtle pt-4">
@@ -50,17 +57,27 @@ export function ByokSection({
           keep one.
         </p>
       ) : (
-        <ul className="mt-3 flex flex-col gap-2">
-          {BYOK_PROVIDERS.map((provider) => (
-            <ProviderRow
-              key={provider.id}
-              provider={provider}
-              hasKey={keyedProviderIds.includes(provider.id)}
-              onAddKey={onAddKey}
-              onRemoveKey={onRemoveKey}
-            />
-          ))}
-        </ul>
+        <>
+          {storeProblem && (
+            <p
+              role="alert"
+              className="mt-3 rounded-md border border-status-warning/40 bg-status-warning/10 p-2.5 text-xs text-text-secondary"
+            >
+              Saved keys can&apos;t be checked right now, so none are shown. {storeProblem}
+            </p>
+          )}
+          <ul className="mt-3 flex flex-col gap-2">
+            {BYOK_PROVIDERS.map((provider) => (
+              <ProviderRow
+                key={provider.id}
+                provider={provider}
+                hasKey={keyedProviderIds.includes(provider.id)}
+                onAddKey={onAddKey}
+                onRemoveKey={onRemoveKey}
+              />
+            ))}
+          </ul>
+        </>
       )}
     </section>
   );
@@ -111,6 +128,59 @@ function ProviderRow({
   }
 
   return (
+    <ProviderRowView
+      provider={provider}
+      hasKey={hasKey}
+      entering={entering}
+      draftKey={draftKey}
+      busy={busy}
+      error={error}
+      onDraftKeyChange={setDraftKey}
+      onStartEntering={() => setEntering(true)}
+      onCancel={() => {
+        setDraftKey("");
+        setEntering(false);
+        setError(null);
+      }}
+      onSubmit={() => void submit()}
+      onRemove={() => void remove()}
+    />
+  );
+}
+
+export interface ProviderRowViewProps {
+  provider: ByokProviderDescriptor;
+  hasKey: boolean;
+  entering: boolean;
+  draftKey: string;
+  busy: boolean;
+  error: string | null;
+  onDraftKeyChange: (value: string) => void;
+  onStartEntering: () => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+  onRemove: () => void;
+}
+
+/**
+ * How one provider row looks, given its state. Separate from the state so
+ * each case can be rendered on its own: a failed removal, for one, has to
+ * be visible when a key exists and the add form is not.
+ */
+export function ProviderRowView({
+  provider,
+  hasKey,
+  entering,
+  draftKey,
+  busy,
+  error,
+  onDraftKeyChange,
+  onStartEntering,
+  onCancel,
+  onSubmit,
+  onRemove,
+}: ProviderRowViewProps) {
+  return (
     <li className="rounded-md border border-border-subtle bg-surface-1 p-2.5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -130,12 +200,12 @@ function ProviderRow({
         </div>
 
         {hasKey ? (
-          <Button size="sm" variant="ghost" disabled={busy} onClick={remove}>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={onRemove}>
             {busy ? "Removing…" : "Remove key"}
           </Button>
         ) : (
           !entering && (
-            <Button size="sm" variant="secondary" onClick={() => setEntering(true)}>
+            <Button size="sm" variant="secondary" onClick={onStartEntering}>
               Add key
             </Button>
           )
@@ -147,7 +217,7 @@ function ProviderRow({
           className="mt-2 flex flex-col gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            void submit();
+            onSubmit();
           }}
         >
           <a
@@ -162,13 +232,12 @@ function ProviderRow({
           <input
             type="password"
             value={draftKey}
-            onChange={(event) => setDraftKey(event.target.value)}
+            onChange={(event) => onDraftKeyChange(event.target.value)}
             placeholder={`Paste your ${provider.label} API key`}
             autoComplete="off"
             spellCheck={false}
             className="rounded-md border border-border-subtle bg-surface-2 p-2 font-mono text-xs text-text-primary placeholder:font-ui placeholder:text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           />
-          {error && <p className="text-xs text-status-danger">{error}</p>}
           <div className="flex items-center gap-2">
             <Button
               type="submit"
@@ -178,20 +247,19 @@ function ProviderRow({
             >
               {busy ? "Saving…" : "Save key"}
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setDraftKey("");
-                setEntering(false);
-                setError(null);
-              }}
-            >
+            <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
               Cancel
             </Button>
           </div>
         </form>
+      )}
+
+      {/* Outside the form: removing a key has no form, and a failure there
+          used to leave the row looking as if nothing had been tried. */}
+      {error && (
+        <p role="alert" className="mt-2 text-xs text-status-danger">
+          {error}
+        </p>
       )}
     </li>
   );
