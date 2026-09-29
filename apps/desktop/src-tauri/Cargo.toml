@@ -65,6 +65,12 @@ windows = { version = "0.61", features = [
     "Win32_System_Threading",
 ] }
 
+# Ending a process tree outside Windows: `kill(-group, SIGKILL)` in
+# src/process.rs. Already in the tree through Tauri and the crates under
+# it, so this adds a dependency edge and no new crate.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [[bin]]
 name = "paleonyx-desktop"
 path = "src/main.rs"

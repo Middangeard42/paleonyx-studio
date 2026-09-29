@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use crate::commands::{resolve_within_root, ProjectState};
+use crate::process::prepare_child;
 
 /// Where agent history lives: a dedicated ref in the user's own
 /// repository (CLAUDE.md §10 decision 3). Nothing here touches the
@@ -27,9 +28,10 @@ pub struct GitStatusDto {
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .current_dir(root)
-        .args(args)
+    let mut command = Command::new("git");
+    command.current_dir(root).args(args);
+    prepare_child(&mut command);
+    let output = command
         .output()
         .map_err(|e| format!("Could not run git: {e}. Is git installed and on PATH?"))?;
 
@@ -47,12 +49,15 @@ fn git(root: &Path, args: &[&str]) -> Result<String, String> {
 /// plumbing, where passing content as an argument would break on any
 /// file large enough to exceed the command-line limit.
 fn git_with_stdin(root: &Path, args: &[&str], input: &str) -> Result<String, String> {
-    let mut child = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .current_dir(root)
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    prepare_child(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|e| format!("Could not run git: {e}. Is git installed and on PATH?"))?;
 

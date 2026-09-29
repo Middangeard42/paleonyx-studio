@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
 
 use crate::commands::ProjectState;
-use crate::process::{hide_window, resolve_program, ProcessGroup};
+use crate::process::{prepare_child, resolve_program, ProcessGroup};
 
 /// A message larger than this is dropped whole rather than buffered
 /// without limit.
@@ -98,7 +98,7 @@ impl McpState {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        hide_window(&mut command);
+        prepare_child(&mut command);
 
         let mut child = command
             .spawn()
@@ -568,6 +568,30 @@ mod tests {
     fn reports_a_server_that_exits_leaving_something_behind() {
         let state = McpState::default();
         let script = "require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit', detached: true }); setTimeout(() => process.exit(0), 300)";
+        let (_, rx) = start(&state, script, Duration::from_secs(10));
+        let (exit_code, _) = closed(&rx, Duration::from_secs(8));
+        assert_eq!(exit_code, Some(0));
+    }
+
+    /// The same two failures on Linux and macOS, with an ordinary
+    /// grandchild: `detached` calls `setsid` on Unix, which leaves the
+    /// process group the app can end.
+    #[cfg(unix)]
+    #[test]
+    fn stopping_a_server_ends_what_it_started() {
+        let state = McpState::default();
+        let script = "require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' }); setInterval(() => {}, 1000)";
+        let (id, rx) = start(&state, script, Duration::from_millis(300));
+        std::thread::sleep(Duration::from_millis(500));
+        state.stop(id);
+        closed(&rx, Duration::from_secs(10));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reports_a_server_that_exits_leaving_something_behind() {
+        let state = McpState::default();
+        let script = "require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' }); setTimeout(() => process.exit(0), 300)";
         let (_, rx) = start(&state, script, Duration::from_secs(10));
         let (exit_code, _) = closed(&rx, Duration::from_secs(8));
         assert_eq!(exit_code, Some(0));

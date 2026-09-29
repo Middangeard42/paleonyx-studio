@@ -388,7 +388,10 @@ product's core trust promise breaks.
   folder — a repository must not be able to plant its own `npm.cmd` —
   and `.cmd` shims are found, which `Command::new` alone does not do.
   Each process tree goes into a Windows job object, so ending it ends
-  everything it started, and the app's exit ends it too. Commands that
+  everything it started, and the app's exit ends it too. Elsewhere the
+  child leads a process group of its own and the group is signalled: that
+  ends what the child started, but not a descendant that leaves the group
+  with `setsid`, and not the tree if the app itself dies. Commands that
   wait on a process are `#[tauri::command(async)]`: a plain command runs
   on the main thread.
 - **Budgets are enforced in `agent-core`, not just displayed in the UI.**
@@ -571,7 +574,7 @@ the work:
   desktop end-to-end suite, the app, or a live model: they need Windows, a
   display, or Ollama, and none of those exist there.
 - With the system libraries from `docs/cloud-sessions.md` installed, the
-  Rust shell builds on Linux: `cargo check --tests`, `cargo test` (50
+  Rust shell builds on Linux: `cargo check --tests`, `cargo test` (56
   tests; the Windows-only ones compile out), `cargo fmt --check` and
   `cargo clippy --all-targets -- -D warnings` all pass there. That checks
   what compiles and runs on Linux only. A change to Windows-only code
