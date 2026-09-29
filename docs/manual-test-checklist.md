@@ -11,10 +11,53 @@ is the most useful thing to send back.
 
 ## Before you start
 
-- [ ] Launch the app the usual way (`tauri dev`). The Rust side changed, so
-      the first start rebuilds for about a minute.
-- [ ] **Models panel → Rescan.** Ornith should now be marked *can run
-      commands*. If it still says it can't call tools, send a screenshot.
+- [ ] **New computer?** Follow [windows-setup.md](windows-setup.md) first:
+      what to install, how to clone, and how to run the automated tests.
+      Those tests are the quickest signal, so run them before anything
+      below: `npx pnpm@9.12.0 --filter @paleonyx/desktop e2e`. If they
+      fail, read the first failure before testing by hand.
+- [ ] Launch the app the usual way (`tauri dev`). On a new computer the
+      first start compiles the Rust side, which takes several minutes.
+- [ ] **Ollama is running**, and a model marked *can run commands*
+      (Ornith) is downloaded: **Models panel → Rescan**, or download it
+      there. Most of the items below use it. If it still says it can't call
+      tools, send a screenshot.
+
+## Changed since the last Windows test — check these first
+
+Several fixes were made from Linux and only reasoned about for Windows. The
+automated checks passed on GitHub's Windows machine, but these are the
+things only a person at a real desktop can see.
+
+- [ ] **File paths still work with nested folders.** Path building was
+      rewritten (it used to swap every backslash for a slash). Open a
+      project with folders inside folders, for example the chicken-counter
+      project.
+  - [ ] The file tree shows nested files under their folders.
+  - [ ] Open a file two folders deep. Expected: it opens.
+  - [ ] Search for a word that is in a nested file. Expected: the result
+        shows its path with forward slashes (`src/app.js`), clicking the
+        match opens it, and **+ Context** adds it.
+  - [ ] Apply a change that edits a nested file. Expected: it applies and
+        appears under History.
+- [ ] **Close the app while a connected server is running**, then look in
+      Task Manager for leftover `node` processes. The exit path changed
+      (see "New this time: connected tools" for how to start a server).
+      Expected: none.
+- [ ] **No console window flashes for git.** Needs the release build; see
+      the item under "Also fixed this time" below.
+- [ ] Optional: **API key storage.** Models panel → a cloud provider →
+      **Add key** with a made-up value such as `test-key-123` → **Save**.
+      Expected: **Key added**, and Control Panel → Credential Manager →
+      Windows Credentials has an entry containing
+      `studio.paleonyx.desktop`. **Remove key** should make the entry
+      disappear and the row return to **Add key**. If either fails, the
+      message on the row should now say why; screenshot it.
+- [ ] Optional: **a repository owned by another account** (a folder on a
+      USB stick, or another Windows user's folder). Open it and try to
+      apply a change. Expected: git's own message, including a
+      `git config --global --add safe.directory ...` line, and **no** offer
+      to create a new repository.
 
 ## New this time: connected tools (MCP)
 
@@ -69,12 +112,14 @@ run inside the app; the automated tests use a small fake one.
       image, especially while a model was busy. Two causes found and
       fixed; mention it if you still see one.
 - [ ] **No black console window flashes for git.** This needs a release
-      build (`pnpm --filter @paleonyx/desktop tauri build`), because a
-      development build already has a console. Run the app from the
-      installed build, open a project, and apply a change. Expected: no
-      black window appears at any point. The agent's `git` calls were the
-      only ones missing the setting that hides it. Changed without being
-      run on Windows.
+      build, because a development build already has a console. Build it
+      with `npx pnpm@9.12.0 --filter @paleonyx/desktop tauri build
+      --no-bundle` (skips the installer), then run
+      `apps\desktop\src-tauri\target\release\paleonyx-desktop.exe`.
+      Open a project and apply a change. Expected: no black window
+      appears at any point. The agent's `git` calls were the only ones
+      missing the setting that hides it. Changed without being run on
+      Windows.
 
 ## 1. Design changes with a real model — most important
 
