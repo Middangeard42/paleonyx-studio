@@ -581,5 +581,7 @@ the work:
   (`#[cfg(windows)]`, job objects, `.cmd` resolution) is still reasoned
   about, not verified, and should be reported that way. The mutation rule
   in §8 still applies to whatever can be run.
+- Commit with `git commit -s`. The `dco` check fails a pull request with an
+  unsigned commit (`CONTRIBUTING.md`); `scripts/check-dco.test.sh` tests it.
 - `docs/manual-test-checklist.md` is for the owner, on Windows. A cloud
   session adds to it; it does not do it.

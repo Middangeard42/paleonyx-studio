@@ -23,8 +23,14 @@ That adds a line like this to the message:
 Signed-off-by: Your Name <you@example.com>
 ```
 
-A pull request with an unsigned commit will be asked to add the sign-off
-before it is merged. To fix the last commit, run `git commit --amend -s`.
+The `dco` check on every pull request fails when a commit in it has no
+sign-off. Merge commits are skipped, and history from before the policy is
+not judged. To fix the last commit, run `git commit --amend -s`; for a
+whole branch, `git rebase --signoff main`.
+
+Commits an AI agent makes in this repository are signed off with the
+repository's own identity, which `git commit -s` picks up from the git
+configuration.
 
 ## Before you open a pull request
 

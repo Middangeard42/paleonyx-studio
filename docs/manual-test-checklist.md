@@ -179,8 +179,15 @@ only worked because that folder already had `src/`.
       address is added and verified under GitHub → Settings → Emails,
       commits show your name without a link to your profile.
 - [x] **Contribution policy** — a DCO, decided. `CONTRIBUTING.md` says how
-      to sign off. Nothing enforces it yet: before the first outside
-      contribution, decide whether to add a CI check for `Signed-off-by`.
+      to sign off, and the `dco` workflow fails a pull request with an
+      unsigned commit.
+- [ ] **Make `dco` a required check** — GitHub → Settings → Rules →
+      Rulesets → your `main` ruleset → add `dco` under required status
+      checks. It only appears in the list after it has run once.
+- [ ] **Agent commits carry the repository's sign-off** — a cloud session
+      now commits with `git commit -s`, which adds `Signed-off-by:
+      Paleonyx Studio <support@paleonyx.com>` (no personal name). Say if
+      you would rather agent commits were exempt or signed some other way.
 - [x] **Web companion over Cloudflare** — same-machine only for now
       (PRD §10). A user-started tunnel is a possible later addition.
 - [ ] **Design mode: source-tagging review (end of v1)** — remind the owner.
