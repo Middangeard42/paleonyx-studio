@@ -1,8 +1,7 @@
 use ignore::WalkBuilder;
 use serde::Serialize;
-use std::path::Path;
 
-use crate::commands::ProjectState;
+use crate::commands::{project_relative_path, ProjectState};
 
 /// Caps, so a broad query on a large repository cannot hang the UI or
 /// return more than anyone would read. Truncation is reported rather
@@ -106,7 +105,7 @@ pub fn search_project(
         }
 
         total_matches += matches.len();
-        let Some(relative) = relative_path(&root, entry.path()) else {
+        let Some(relative) = project_relative_path(&root, entry.path()) else {
             continue;
         };
 
@@ -127,15 +126,6 @@ pub fn search_project(
         truncated,
         total_matches,
     })
-}
-
-fn relative_path(root: &Path, path: &Path) -> Option<String> {
-    Some(
-        path.strip_prefix(root)
-            .ok()?
-            .to_string_lossy()
-            .replace('\\', "/"),
-    )
 }
 
 fn find_in_file(
