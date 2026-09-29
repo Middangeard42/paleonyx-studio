@@ -45,6 +45,11 @@ export interface InvestigateOptions {
   runCommand?: CommandRunner;
   /** Tools from servers the user connected and enabled. */
   connectedTools?: readonly ConnectedTool[];
+  /**
+   * Files whose full text is already in `messages`. Reading one again
+   * only adds a second copy to a window that is small on a local model.
+   */
+  alreadyProvided?: readonly string[];
   onStatus?: (message: string) => void;
   maxIterations?: number;
 }
@@ -94,6 +99,7 @@ export async function investigate(
   }
 
   const maxIterations = options.maxIterations ?? 6;
+  const have = new Set((options.alreadyProvided ?? []).map(normalizePath));
 
   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
     if (options.budget.isExhausted()) {
@@ -124,9 +130,24 @@ export async function investigate(
       toolCalls: response.toolCalls,
     });
 
+    let repeatedRead = false;
     for (const call of response.toolCalls) {
       options.budget.recordToolCall();
-      const step = await runTool(call, options, commandsAvailable, connected);
+      const readPath =
+        call.name === READ_FILE_TOOL_NAME && typeof call.arguments.path === "string"
+          ? call.arguments.path
+          : undefined;
+      const repeat = readPath !== undefined && have.has(normalizePath(readPath));
+      const step = repeat
+        ? {
+            tool: call.name,
+            summary: `Already had ${readPath}`,
+            detail: `${readPath} is already in this conversation in full. Do not read it again; use that copy.`,
+            ok: true,
+          }
+        : await runTool(call, options, commandsAvailable, connected);
+      if (repeat) repeatedRead = true;
+      else if (readPath !== undefined && step.ok) have.add(normalizePath(readPath));
       steps.push(step);
       messages.push({
         role: "tool",
@@ -157,6 +178,17 @@ export async function investigate(
         return { kind: "ready", messages, steps };
       }
     }
+
+    // A read of something already held means it has run out of new things
+    // to ask for. Going round again only adds more to the window.
+    if (repeatedRead) {
+      messages.push({
+        role: "user",
+        content:
+          "You already have every file you asked for. Answer now using what is above.",
+      });
+      return { kind: "ready", messages, steps };
+    }
   }
 
   // Out of iterations. Returning what was gathered lets the caller still
@@ -184,6 +216,10 @@ function offerableConnectedTools(options: InvestigateOptions): Map<string, Conne
     offered.set(name, tool);
   }
   return offered;
+}
+
+function normalizePath(path: string): string {
+  return path.trim().replace(/^\.\//, "").replace(/\\/g, "/");
 }
 
 const BUILT_IN_TOOL_NAMES = new Set([

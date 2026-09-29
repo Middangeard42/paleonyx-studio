@@ -277,6 +277,34 @@ describe("runAgentTask with the offline demo responder", () => {
     expect(result.diff.every((d) => isCreation(d))).toBe(true);
   });
 
+  it("does not let the model read again a file it was already given whole", async () => {
+    const inner = new MockAdapter({ respond: demoRespond, latencyMs: 0 });
+    let call = 0;
+    const provider = new MockAdapter({ respond: demoRespond, latencyMs: 0 });
+    provider.model.capabilities.supportsToolCalling = true;
+    provider.chat = async (request) => {
+      call += 1;
+      if (call === 1) {
+        return {
+          content: "",
+          toolCalls: [{ id: "1", name: "readFile", arguments: { path: "src/sum.ts" } }],
+          finishReason: "tool_calls",
+        };
+      }
+      return inner.chat(request);
+    };
+
+    const result = await runAgentTask({
+      provider,
+      fs: new FakeFs({ "src/sum.ts": BUGGY_SUM }),
+      input: { taskType: "bug-fix", instructions: "sum returns NaN", targetFiles: ["src/sum.ts"] },
+      skillLevel: "experienced",
+    });
+
+    expect(result.investigation[0]?.summary).toBe("Already had src/sum.ts");
+    expect(result.escalation).toBeUndefined();
+  });
+
   it("escalates on a tool failure instead of proceeding without the file", async () => {
     const result = await runAgentTask({
       provider: provider(),

@@ -197,6 +197,9 @@ export async function runAgentTask(
     commandAllowlist: options.commandAllowlist ?? DEFAULT_COMMAND_ALLOWLIST,
     runCommand: options.runCommand,
     connectedTools: options.connectedTools,
+    // Only what was sent whole: an outlined file has not been seen, and
+    // reading it once is how the model gets its code.
+    alreadyProvided: Object.keys(fileContents),
     onStatus: options.onStatus,
   });
 
