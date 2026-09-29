@@ -1024,7 +1024,7 @@ function Workspace({
     } catch {
       // An unreadable tree is not worth an error banner in a panel whose
       // empty state already reads as "nothing found".
-      setSearchResults({ files: [], truncated: false, totalMatches: 0 });
+      setSearchResults({ files: [], truncated: false, totalMatches: 0, skippedNames: 0 });
     } finally {
       setSearching(false);
     }

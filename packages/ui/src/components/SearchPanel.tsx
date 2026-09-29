@@ -99,7 +99,7 @@ function Toggle({
   );
 }
 
-function SearchResultsList({
+export function SearchResultsList({
   results,
   searching,
   query,
@@ -125,11 +125,23 @@ function SearchResultsList({
       </p>
     );
   }
+  const skipped = results.skippedNames > 0 && (
+    <p role="status" className="text-xs text-status-warning">
+      {results.skippedNames} more file{results.skippedNames === 1 ? " has" : "s have"}{" "}
+      matches but can&apos;t be listed: {results.skippedNames === 1 ? "its name isn't" : "their names aren't"}{" "}
+      valid text.
+    </p>
+  );
+
   if (results.files.length === 0) {
     return (
-      <p className="text-xs text-text-tertiary">
-        No matches for &ldquo;{query}&rdquo;.
-      </p>
+      <div className="flex flex-col gap-1.5">
+        <p className="text-xs text-text-tertiary">
+          No matches for &ldquo;{query}&rdquo;
+          {results.skippedNames > 0 && " in the files that can be listed"}.
+        </p>
+        {skipped}
+      </div>
     );
   }
 
@@ -140,6 +152,7 @@ function SearchResultsList({
         {results.files.length} file{results.files.length === 1 ? "" : "s"}
         {results.truncated && " — showing the first of many"}
       </p>
+      {skipped}
 
       {results.files.map((file) => (
         <div key={file.path}>

@@ -1,5 +1,6 @@
 use ignore::WalkBuilder;
 use serde::Serialize;
+use std::path::Path;
 
 use crate::commands::{project_relative_path, ProjectState};
 
@@ -38,6 +39,10 @@ pub struct SearchResultsDto {
     pub files: Vec<FileSearchResultDto>,
     pub truncated: bool,
     pub total_matches: usize,
+    /// Files that had matches but whose names cannot be written as text, so
+    /// they cannot be listed. Reported so a search that came up short of
+    /// them does not read as complete.
+    pub skipped_names: usize,
 }
 
 #[tauri::command]
@@ -51,17 +56,21 @@ pub fn search_project(
         let guard = state.root.lock().map_err(|e| e.to_string())?;
         guard.as_ref().cloned().ok_or("No project is open.")?
     };
+    Ok(search_in(&root, &query, case_sensitive, whole_word))
+}
 
+fn search_in(root: &Path, query: &str, case_sensitive: bool, whole_word: bool) -> SearchResultsDto {
     if query.is_empty() {
-        return Ok(SearchResultsDto {
+        return SearchResultsDto {
             files: Vec::new(),
             truncated: false,
             total_matches: 0,
-        });
+            skipped_names: 0,
+        };
     }
 
     let needle = if case_sensitive {
-        query.clone()
+        query.to_string()
     } else {
         query.to_lowercase()
     };
@@ -69,12 +78,13 @@ pub fn search_project(
     let mut files = Vec::new();
     let mut total_matches = 0usize;
     let mut truncated = false;
+    let mut skipped_names = 0usize;
 
     // WalkBuilder honours .gitignore, .ignore, and hidden-file rules, so
     // build output and dependencies stay out of results without us
     // maintaining an exclusion list that would drift from each project's
     // actual conventions.
-    let walker = WalkBuilder::new(&root)
+    let walker = WalkBuilder::new(root)
         .hidden(true)
         .git_ignore(true)
         .git_global(true)
@@ -104,10 +114,13 @@ pub fn search_project(
             continue;
         }
 
-        total_matches += matches.len();
-        let Some(relative) = project_relative_path(&root, entry.path()) else {
+        // Named before anything is counted, so the totals only include
+        // what the reader can see.
+        let Some(relative) = project_relative_path(root, entry.path()) else {
+            skipped_names += 1;
             continue;
         };
+        total_matches += matches.len();
 
         let mut capped = matches;
         if capped.len() > MAX_MATCHES_PER_FILE {
@@ -121,11 +134,12 @@ pub fn search_project(
         });
     }
 
-    Ok(SearchResultsDto {
+    SearchResultsDto {
         files,
         truncated,
         total_matches,
-    })
+        skipped_names,
+    }
 }
 
 fn find_in_file(
@@ -185,4 +199,45 @@ fn is_whole_word(haystack: &str, start: usize, end: usize) -> bool {
 
 fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::ScratchDir;
+
+    /// A name that is not valid UTF-8 can only be created where file names
+    /// are bytes. Windows names are text, and macOS refuses invalid ones.
+    #[cfg(target_os = "linux")]
+    fn not_text_name() -> std::ffi::OsString {
+        use std::os::unix::ffi::OsStringExt;
+        std::ffi::OsString::from_vec(b"caf\xe9.txt".to_vec())
+    }
+
+    /// The regression: a file that matched but could not be named was
+    /// dropped with no word, after its matches had been added to the total.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn matches_in_a_file_whose_name_is_not_text_are_reported_not_hidden() {
+        let dir = ScratchDir::new("paleonyx-search-name");
+        std::fs::write(dir.join("plain.txt"), "a needle here\n").unwrap();
+        std::fs::write(dir.join(not_text_name()), "another needle\n").unwrap();
+
+        let results = search_in(&dir, "needle", true, false);
+
+        let names: Vec<&str> = results.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(names, vec!["plain.txt"]);
+        assert_eq!(results.skipped_names, 1);
+        // The total counts what is shown, not matches the reader cannot see.
+        assert_eq!(results.total_matches, 1);
+    }
+
+    #[test]
+    fn nothing_is_reported_skipped_when_every_name_can_be_shown() {
+        let dir = ScratchDir::new("paleonyx-search-plain");
+        std::fs::write(dir.join("a.txt"), "needle\n").unwrap();
+        let results = search_in(&dir, "needle", true, false);
+        assert_eq!(results.skipped_names, 0);
+        assert_eq!(results.total_matches, 1);
+    }
 }

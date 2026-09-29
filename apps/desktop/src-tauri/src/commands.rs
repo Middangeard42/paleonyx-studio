@@ -101,12 +101,17 @@ pub fn list_project_files(
 /// its text. Windows splits on `\\` and gets `/` back; elsewhere a
 /// backslash is an ordinary character in a file name, and rewriting it
 /// listed a path that does not exist.
+///
+/// `None` when the path is not inside `root`, or when a part of it is not
+/// valid text. Such a name cannot go to the interface and come back as the
+/// same file, so it is not converted: a replacement character in its place
+/// named a file that does not exist.
 pub(crate) fn project_relative_path(root: &Path, path: &Path) -> Option<String> {
     let relative = path.strip_prefix(root).ok()?;
-    let parts: Vec<_> = relative
-        .components()
-        .map(|part| part.as_os_str().to_string_lossy())
-        .collect();
+    let mut parts = Vec::new();
+    for part in relative.components() {
+        parts.push(part.as_os_str().to_str()?);
+    }
     Some(parts.join("/"))
 }
 
@@ -134,7 +139,11 @@ pub(crate) fn collect_files(
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
         let name = entry.file_name();
-        let name_str = name.to_string_lossy();
+        // A name that is not text is left out, and so is everything inside
+        // a folder with one: nothing below it could be named either.
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
         // The entry's own type, which does not follow a link. Following
         // one listed a link back up the tree as a few dozen nested
         // copies of it, and listed the names of files outside the project.
@@ -144,7 +153,7 @@ pub(crate) fn collect_files(
             continue;
         }
         let hidden = name_str.starts_with('.')
-            && !(file_type.is_dir() && LISTED_HIDDEN_DIRS.contains(&name_str.as_ref()));
+            && !(file_type.is_dir() && LISTED_HIDDEN_DIRS.contains(&name_str));
         if hidden || name_str == "node_modules" || name_str == "target" {
             continue;
         }
@@ -321,6 +330,29 @@ mod tests {
         assert_eq!(paths, vec!["app.ts".to_string()]);
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&elsewhere);
+    }
+
+    /// A name that is not text cannot be sent to the interface or read back
+    /// from it. It used to be listed with a replacement character in place
+    /// of the bad byte, an entry that failed as soon as it was opened.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_file_whose_name_is_not_text_is_left_out_of_the_listing() {
+        use std::os::unix::ffi::OsStringExt;
+        let root = empty_root("not-text");
+        std::fs::write(root.join("plain.txt"), "x").unwrap();
+        let bad = std::ffi::OsString::from_vec(b"caf\xe9.txt".to_vec());
+        std::fs::write(root.join(&bad), "x").unwrap();
+        // A folder with such a name hides what is inside it too.
+        let bad_dir = root.join(std::ffi::OsString::from_vec(b"d\xffir".to_vec()));
+        std::fs::create_dir_all(&bad_dir).unwrap();
+        std::fs::write(bad_dir.join("inside.txt"), "x").unwrap();
+
+        let mut out = Vec::new();
+        collect_files(&root, &root, &mut out).unwrap();
+        let paths: Vec<String> = out.into_iter().map(|f| f.path).collect();
+        assert_eq!(paths, vec!["plain.txt".to_string()]);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Search reports its paths through the same function, so this is what
