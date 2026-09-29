@@ -40,6 +40,14 @@ things only a person at a real desktop can see.
         match opens it, and **+ Context** adds it.
   - [ ] Apply a change that edits a nested file. Expected: it applies and
         appears under History.
+- [ ] **Resize between Agent and History.** Drag the thin line between the
+      two panels up and down. Expected: History gets taller or shorter,
+      the Agent panel takes what is left, and each scrolls on its own. It
+      stops before History gets too small to use, and before the Agent
+      panel is squeezed out, even in a short window. Close and reopen the
+      project: the height is kept. With the line selected (Tab to it), the
+      up and down arrows nudge it and Home and End go to the extremes. The
+      three side-by-side dividers should still drag as before.
 - [ ] **Close the app while a connected server is running**, then look in
       Task Manager for leftover `node` processes. The exit path changed
       (see "New this time: connected tools" for how to start a server).
