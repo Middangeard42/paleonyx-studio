@@ -92,16 +92,59 @@ fn project_root(state: &tauri::State<ProjectState>) -> Result<std::path::PathBuf
 
 #[tauri::command]
 pub fn git_status(state: tauri::State<ProjectState>) -> Result<GitStatusDto, String> {
-    let root = project_root(&state)?;
-    let is_repository = git(&root, &["rev-parse", "--is-inside-work-tree"])
-        .map(|out| out == "true")
-        .unwrap_or(false);
+    repository_status(&project_root(&state)?)
+}
 
-    let has_commits = is_repository && git(&root, &["rev-parse", "--verify", "HEAD"]).is_ok();
+fn repository_status(root: &Path) -> Result<GitStatusDto, String> {
+    let is_repository = is_repository(root)?;
+
+    let has_commits = is_repository && git(root, &["rev-parse", "--verify", "HEAD"]).is_ok();
 
     Ok(GitStatusDto {
         is_repository,
         has_commits,
+    })
+}
+
+/// Whether `root` is inside a git work tree.
+///
+/// Not being one is an answer. Anything else git says (a repository owned
+/// by another user, a format it cannot read, git not installed) is a
+/// problem, and reporting it as "not a repository" would offer to create
+/// a new repository on top of a real one.
+///
+/// Git exits with the same code for both, so the message tells them
+/// apart. Git translates its messages, so this one is asked for in English.
+fn is_repository(root: &Path) -> Result<bool, String> {
+    let mut command = Command::new("git");
+    command
+        .current_dir(root)
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .env("LC_ALL", "C");
+    prepare_child(&mut command);
+    let output = command
+        .output()
+        .map_err(|e| format!("Could not run git: {e}. Is git installed and on PATH?"))?;
+    interpret_probe(
+        output.status.success(),
+        &String::from_utf8_lossy(&output.stdout),
+        &String::from_utf8_lossy(&output.stderr),
+    )
+}
+
+fn interpret_probe(succeeded: bool, stdout: &str, stderr: &str) -> Result<bool, String> {
+    if succeeded {
+        // Inside the `.git` folder itself git succeeds and prints "false".
+        return Ok(stdout.trim() == "true");
+    }
+    if stderr.contains("not a git repository") {
+        return Ok(false);
+    }
+    let message = stderr.trim();
+    Err(if message.is_empty() {
+        "git could not check this folder.".to_string()
+    } else {
+        format!("git could not check this folder: {message}")
     })
 }
 
@@ -115,7 +158,7 @@ pub fn git_status(state: tauri::State<ProjectState>) -> Result<GitStatusDto, Str
 #[tauri::command]
 pub fn git_init(state: tauri::State<ProjectState>) -> Result<(), String> {
     let root = project_root(&state)?;
-    if git(&root, &["rev-parse", "--is-inside-work-tree"]).is_ok() {
+    if is_repository(&root)? {
         return Err("This folder is already a git repository.".to_string());
     }
     git(&root, &["init"])?;
@@ -249,4 +292,111 @@ pub fn list_agent_changes(state: tauri::State<ProjectState>) -> Result<Vec<Strin
         records.push(record);
     }
     Ok(records)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::ScratchDir;
+
+    fn scratch(name: &str) -> ScratchDir {
+        ScratchDir::new(&format!("paleonyx-git-{name}"))
+    }
+
+    fn init(dir: &Path) {
+        git(dir, &["init", "-q"]).unwrap();
+    }
+
+    #[test]
+    fn a_plain_folder_is_not_a_repository() {
+        let dir = scratch("plain");
+        let status = repository_status(&dir).unwrap();
+        assert!(!status.is_repository);
+        assert!(!status.has_commits);
+    }
+
+    #[test]
+    fn a_new_repository_has_no_commits_yet() {
+        let dir = scratch("new");
+        init(&dir);
+        let status = repository_status(&dir).unwrap();
+        assert!(status.is_repository);
+        assert!(!status.has_commits);
+    }
+
+    #[test]
+    fn a_repository_with_a_commit_says_so() {
+        let dir = scratch("committed");
+        init(&dir);
+        git(
+            &dir,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "first",
+            ],
+        )
+        .unwrap();
+        let status = repository_status(&dir).unwrap();
+        assert!(status.is_repository);
+        assert!(status.has_commits);
+    }
+
+    /// What git said in each case, from a real run.
+    const NOT_A_REPOSITORY: &str =
+        "fatal: not a git repository (or any of the parent directories): .git\n";
+    const OTHER_OWNER: &str = "fatal: detected dubious ownership in repository at '/srv/project'\nTo add an exception for this directory, call:\n\n\tgit config --global --add safe.directory /srv/project\n";
+
+    #[test]
+    fn reads_what_git_said() {
+        assert_eq!(interpret_probe(true, "true\n", ""), Ok(true));
+        assert_eq!(interpret_probe(true, "false\n", ""), Ok(false));
+        assert_eq!(interpret_probe(false, "", NOT_A_REPOSITORY), Ok(false));
+    }
+
+    #[test]
+    fn a_repository_owned_by_someone_else_is_a_problem_that_says_how_to_fix_it() {
+        let error = interpret_probe(false, "", OTHER_OWNER).unwrap_err();
+        assert!(error.contains("dubious ownership"), "{error}");
+        assert!(error.contains("safe.directory"), "{error}");
+    }
+
+    #[test]
+    fn a_failure_with_no_message_is_still_a_problem() {
+        assert!(interpret_probe(false, "", "").is_err());
+    }
+
+    /// The regression: any failure of the check was reported as "not a
+    /// repository". A folder git refuses to read (here, a format version
+    /// it does not know; in practice often a repository owned by another
+    /// user) was then offered a new repository on top of the real one.
+    #[test]
+    fn a_repository_git_will_not_read_is_an_error_not_a_missing_repository() {
+        let dir = scratch("unreadable");
+        init(&dir);
+        let config = dir.join(".git").join("config");
+        let text = std::fs::read_to_string(&config).unwrap();
+        std::fs::write(
+            &config,
+            text.replace(
+                "repositoryformatversion = 0",
+                "repositoryformatversion = 99",
+            ),
+        )
+        .unwrap();
+
+        match repository_status(&dir) {
+            Err(error) => assert!(error.contains("99"), "{error}"),
+            Ok(status) => panic!(
+                "reported as a plain answer: is_repository = {}",
+                status.is_repository
+            ),
+        }
+    }
 }

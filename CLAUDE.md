@@ -574,7 +574,7 @@ the work:
   desktop end-to-end suite, the app, or a live model: they need Windows, a
   display, or Ollama, and none of those exist there.
 - With the system libraries from `docs/cloud-sessions.md` installed, the
-  Rust shell builds on Linux: `cargo check --tests`, `cargo test` (56
+  Rust shell builds on Linux: `cargo check --tests`, `cargo test` (63
   tests; the Windows-only ones compile out), `cargo fmt --check` and
   `cargo clippy --all-targets -- -D warnings` all pass there. That checks
   what compiles and runs on Linux only. A change to Windows-only code
