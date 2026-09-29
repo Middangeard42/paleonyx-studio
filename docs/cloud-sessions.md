@@ -56,7 +56,7 @@ permission choices and must not travel.
 
 The Rust shell was written on Windows. Some of its tests are Windows-only
 and compile out elsewhere. With the libraries below installed it builds on
-Linux, and `cargo test` runs 50 tests there; the first attempt turned up
+Linux, and `cargo test` runs 56 tests there; the first attempt turned up
 one unused import in a test module, since fixed. `.github/workflows/ci.yml`
 runs the tests on GitHub's Linux and Windows machines.
 

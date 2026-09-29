@@ -68,6 +68,13 @@ run inside the app; the automated tests use a small fake one.
 - [ ] The preview could occasionally show a blank page or a missing
       image, especially while a model was busy. Two causes found and
       fixed; mention it if you still see one.
+- [ ] **No black console window flashes for git.** This needs a release
+      build (`pnpm --filter @paleonyx/desktop tauri build`), because a
+      development build already has a console. Run the app from the
+      installed build, open a project, and apply a change. Expected: no
+      black window appears at any point. The agent's `git` calls were the
+      only ones missing the setting that hides it. Changed without being
+      run on Windows.
 
 ## 1. Design changes with a real model — most important
 
