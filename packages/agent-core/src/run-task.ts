@@ -3,10 +3,12 @@ import type {
   AgentTaskInput,
   AgentTaskResult,
   AgentTaskType,
+  ChatCompletionResult,
   ChatMessage,
   EscalationReason,
   FileSystemReader,
   CodeSymbol,
+  ModelReply,
   PermissionMode,
   SkillLevel,
   ToolCall,
@@ -197,6 +199,9 @@ export async function runAgentTask(
     commandAllowlist: options.commandAllowlist ?? DEFAULT_COMMAND_ALLOWLIST,
     runCommand: options.runCommand,
     connectedTools: options.connectedTools,
+    // Only what was sent whole: an outlined file has not been seen, and
+    // reading it once is how the model gets its code.
+    alreadyProvided: Object.keys(fileContents),
     onStatus: options.onStatus,
   });
 
@@ -213,10 +218,11 @@ export async function runAgentTask(
   ];
   options.onStatus?.("Writing up…");
   const result = await options.provider.chat({ messages });
+  const replies: ModelReply[] = [toModelReply("Answer", result)];
   budget.recordTokens((result.usage?.promptTokens ?? 0) + (result.usage?.completionTokens ?? 0));
 
   if (budget.isExhausted()) {
-    return escalate(taskType, budget, "budget-exhausted", "Token budget exhausted after the model responded.");
+    return escalate(taskType, budget, "budget-exhausted", "Token budget exhausted after the model responded.", [], replies);
   }
 
   let parsed = parseAgentResponse(result.content);
@@ -250,6 +256,7 @@ export async function runAgentTask(
     budget.recordTokens(
       (retry.usage?.promptTokens ?? 0) + (retry.usage?.completionTokens ?? 0)
     );
+    replies.push(toModelReply("Second try", retry));
     parsed = parseAgentResponse(retry.content);
   }
 
@@ -259,7 +266,8 @@ export async function runAgentTask(
       budget,
       "low-confidence",
       "The model ran out of room before it finished its answer, so the plan is incomplete and was not used. Try a smaller task, a model with a larger context window, or raise the model's context size.",
-      investigation.steps
+      investigation.steps,
+      replies
     );
   }
 
@@ -269,7 +277,8 @@ export async function runAgentTask(
       budget,
       "low-confidence",
       `Could not parse a structured plan from the model's response: ${parsed.error}`,
-      investigation.steps
+      investigation.steps,
+      replies
     );
   }
 
@@ -293,7 +302,18 @@ export async function runAgentTask(
     confidence: repaired && parsed.value.confidence === "high" ? "medium" : parsed.value.confidence,
     budgetUsage: budget.current,
     investigation: investigation.steps,
+    modelReplies: replies,
     filesSeen,
+  };
+}
+
+function toModelReply(label: string, reply: ChatCompletionResult): ModelReply {
+  return {
+    label,
+    content: reply.content,
+    finishReason: reply.finishReason,
+    promptTokens: reply.usage?.promptTokens,
+    completionTokens: reply.usage?.completionTokens,
   };
 }
 
@@ -302,7 +322,8 @@ function escalate(
   budget: BudgetTracker,
   reason: EscalationReason,
   message: string,
-  steps: InvestigationStep[] = []
+  steps: InvestigationStep[] = [],
+  modelReplies: ModelReply[] = []
 ): AgentTaskResult {
   return {
     plan: { taskType, summary: "Paused before completing the task.", steps: [] },
@@ -314,6 +335,7 @@ function escalate(
     // Kept even on a pause: seeing which commands ran and what they said
     // is usually what explains why the agent stopped (CLAUDE.md §7).
     investigation: steps,
+    modelReplies,
     // An escalation carries no diff, so there is nothing to place and
     // nothing to compare against.
     filesSeen: {},

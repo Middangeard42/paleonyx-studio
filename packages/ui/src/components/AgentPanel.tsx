@@ -10,6 +10,7 @@ import { LessonCallout } from "./LessonCallout.js";
 import { DiffView } from "./DiffView.js";
 import { EscalationBanner } from "./EscalationBanner.js";
 import { InvestigationLog } from "./InvestigationLog.js";
+import { RunDetails } from "./RunDetails.js";
 
 export interface AgentPanelProps {
   skillLevel: SkillLevel;
@@ -129,6 +130,8 @@ export function AgentPanel(props: AgentPanelProps) {
         )}
 
         {props.result?.escalation && <EscalationBanner escalation={props.result.escalation} />}
+
+        {props.result && <RunDetails replies={props.result.modelReplies} />}
 
         {props.result && !props.result.escalation && (
           <section className="flex flex-col gap-2">
