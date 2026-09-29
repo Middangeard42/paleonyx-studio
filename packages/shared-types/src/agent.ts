@@ -100,6 +100,8 @@ export interface AgentTaskResult {
    * what it did, not just what it concluded (CLAUDE.md §7).
    */
   investigation: AgentInvestigationStep[];
+  /** The model's answer turns as they arrived, for the Details section. */
+  modelReplies: ModelReply[];
   /**
    * Each file's content as the agent read it.
    *
@@ -109,6 +111,21 @@ export interface AgentTaskResult {
    * the file is still exactly this, the user cannot be the cause.
    */
   filesSeen: Record<string, string>;
+}
+
+/**
+ * One reply the model sent when asked for its answer, exactly as it
+ * arrived. Kept so a failure can be read for what it is: whether the
+ * model wrote the wrong format, was cut off, or wrote something sound
+ * that the parser rejected.
+ */
+export interface ModelReply {
+  /** "Answer", or "Second try" when the first could not be used. */
+  label: string;
+  content: string;
+  finishReason: import("./chat.js").ChatFinishReason;
+  promptTokens?: number;
+  completionTokens?: number;
 }
 
 export interface AgentInvestigationStep {

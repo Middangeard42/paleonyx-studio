@@ -277,6 +277,42 @@ describe("runAgentTask with the offline demo responder", () => {
     expect(result.diff.every((d) => isCreation(d))).toBe(true);
   });
 
+  it("keeps the model's raw reply, with its size, on a result", async () => {
+    let reply = "";
+    const provider = new MockAdapter({
+      respond: (request) => {
+        reply = demoRespond(request);
+        return reply;
+      },
+      latencyMs: 0,
+    });
+    const result = await runAgentTask({
+      provider,
+      fs: new FakeFs({ "src/sum.ts": BUGGY_SUM }),
+      input: { taskType: "bug-fix", instructions: "sum returns NaN", targetFiles: ["src/sum.ts"] },
+      skillLevel: "experienced",
+    });
+
+    expect(result.modelReplies).toHaveLength(1);
+    expect(result.modelReplies[0]?.label).toBe("Answer");
+    expect(result.modelReplies[0]?.content).toBe(reply);
+    expect(result.modelReplies[0]?.finishReason).toBe("stop");
+  });
+
+  it("keeps both replies when it had to ask again, including on a pause", async () => {
+    const provider = new MockAdapter({ respond: () => "not json", latencyMs: 0 });
+    const result = await runAgentTask({
+      provider,
+      fs: new FakeFs({ "src/sum.ts": BUGGY_SUM }),
+      input: { taskType: "bug-fix", instructions: "sum returns NaN", targetFiles: ["src/sum.ts"] },
+      skillLevel: "experienced",
+    });
+
+    expect(result.escalation).toBeDefined();
+    expect(result.modelReplies.map((r) => r.label)).toEqual(["Answer", "Second try"]);
+    expect(result.modelReplies.every((r) => r.content === "not json")).toBe(true);
+  });
+
   it("escalates on a tool failure instead of proceeding without the file", async () => {
     const result = await runAgentTask({
       provider: provider(),
