@@ -16,6 +16,12 @@ export interface ByokSectionProps {
    * of a form that cannot honour what it implies.
    */
   available?: boolean;
+  /**
+   * Why the credential store could not be checked, when it could not. Shown
+   * above the list: without it, an unusable store looks like "no keys yet"
+   * until someone tries to add one and it fails.
+   */
+  storeProblem?: string | null;
 }
 
 /**
@@ -32,6 +38,7 @@ export function ByokSection({
   onAddKey,
   onRemoveKey,
   available = true,
+  storeProblem = null,
 }: ByokSectionProps) {
   return (
     <section className="mt-6 border-t border-border-subtle pt-4">
@@ -50,17 +57,27 @@ export function ByokSection({
           keep one.
         </p>
       ) : (
-        <ul className="mt-3 flex flex-col gap-2">
-          {BYOK_PROVIDERS.map((provider) => (
-            <ProviderRow
-              key={provider.id}
-              provider={provider}
-              hasKey={keyedProviderIds.includes(provider.id)}
-              onAddKey={onAddKey}
-              onRemoveKey={onRemoveKey}
-            />
-          ))}
-        </ul>
+        <>
+          {storeProblem && (
+            <p
+              role="alert"
+              className="mt-3 rounded-md border border-status-warning/40 bg-status-warning/10 p-2.5 text-xs text-text-secondary"
+            >
+              Saved keys can&apos;t be checked right now, so none are shown. {storeProblem}
+            </p>
+          )}
+          <ul className="mt-3 flex flex-col gap-2">
+            {BYOK_PROVIDERS.map((provider) => (
+              <ProviderRow
+                key={provider.id}
+                provider={provider}
+                hasKey={keyedProviderIds.includes(provider.id)}
+                onAddKey={onAddKey}
+                onRemoveKey={onRemoveKey}
+              />
+            ))}
+          </ul>
+        </>
       )}
     </section>
   );
