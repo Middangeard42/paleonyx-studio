@@ -94,6 +94,22 @@ pub fn list_project_files(
     Ok(files)
 }
 
+/// `path` relative to `root`, written with `/` between its parts, which is
+/// how the interface names project files on every platform.
+///
+/// Built from the path's own components rather than by rewriting `\\` in
+/// its text. Windows splits on `\\` and gets `/` back; elsewhere a
+/// backslash is an ordinary character in a file name, and rewriting it
+/// listed a path that does not exist.
+pub(crate) fn project_relative_path(root: &Path, path: &Path) -> Option<String> {
+    let relative = path.strip_prefix(root).ok()?;
+    let parts: Vec<_> = relative
+        .components()
+        .map(|part| part.as_os_str().to_string_lossy())
+        .collect();
+    Some(parts.join("/"))
+}
+
 /// Hidden folders that are part of the project rather than noise.
 ///
 /// Only `.paleonyx`, which holds the project's own context document and
@@ -135,11 +151,8 @@ pub(crate) fn collect_files(
         if file_type.is_dir() {
             collect_files(root, &path, out)?;
         } else {
-            let relative = path
-                .strip_prefix(root)
-                .map_err(|e| e.to_string())?
-                .to_string_lossy()
-                .replace('\\', "/");
+            let relative = project_relative_path(root, &path)
+                .ok_or_else(|| format!("{} is outside the project.", path.display()))?;
             out.push(ProjectFileDto { path: relative });
         }
     }
@@ -308,6 +321,38 @@ mod tests {
         assert_eq!(paths, vec!["app.ts".to_string()]);
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&elsewhere);
+    }
+
+    /// Search reports its paths through the same function, so this is what
+    /// keeps the two agreeing.
+    #[test]
+    fn project_paths_are_written_with_slashes_and_only_inside_the_project() {
+        let root = Path::new("project");
+        assert_eq!(
+            project_relative_path(root, &root.join("src").join("app.ts")),
+            Some("src/app.ts".to_string())
+        );
+        assert_eq!(
+            project_relative_path(root, Path::new("elsewhere/x.ts")),
+            None
+        );
+    }
+
+    /// A backslash is an ordinary character in a file name outside
+    /// Windows. Rewriting it to a slash listed a path that does not exist.
+    #[cfg(unix)]
+    #[test]
+    fn a_backslash_in_a_file_name_is_kept_and_the_path_still_resolves() {
+        let root = empty_root("backslash");
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src").join("odd\\name.txt"), "x").unwrap();
+        let mut out = Vec::new();
+        collect_files(&root, &root, &mut out).unwrap();
+        let paths: Vec<String> = out.into_iter().map(|f| f.path).collect();
+        assert_eq!(paths, vec!["src/odd\\name.txt".to_string()]);
+        let resolved = resolve_within_root(&root, &paths[0]).unwrap();
+        assert!(resolved.is_file(), "{resolved:?}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Only a folder of that name is let through: a stray file called
