@@ -77,6 +77,7 @@ function run(
     allowlist?: readonly string[];
     connectedTools?: readonly ConnectedTool[];
     budget?: BudgetTracker;
+    alreadyProvided?: readonly string[];
   } = {}
 ) {
   return investigate({
@@ -88,6 +89,7 @@ function run(
     commandAllowlist: options.allowlist ?? ["cargo test"],
     runCommand: options.runCommand,
     connectedTools: options.connectedTools,
+    alreadyProvided: options.alreadyProvided,
   });
 }
 
@@ -99,6 +101,53 @@ describe("capability gating", () => {
     const outcome = await run(provider);
     expect(outcome.kind).toBe("ready");
     expect(provider.calls).toBe(0);
+  });
+});
+
+describe("files the model already has", () => {
+  const readA = (id: string): ChatCompletionResult => ({
+    content: "",
+    toolCalls: [{ id, name: "readFile", arguments: { path: "a.ts" } }],
+    finishReason: "tool_calls",
+  });
+
+  // Observed: a design change on a file that was already attached was
+  // read five more times, each copy landing in the conversation, until
+  // the window overflowed and the reply came back cut off.
+  it("does not send a file again that was given with the request, and stops gathering", async () => {
+    const provider = new ScriptedProvider([readA("1"), readA("2"), readA("3")]);
+    const outcome = await run(provider, { alreadyProvided: ["a.ts"] });
+
+    expect(provider.calls).toBe(1);
+    expect(outcome.kind).toBe("ready");
+    expect(outcome.steps).toHaveLength(1);
+    expect(outcome.steps[0]?.detail).not.toContain("const x = 1");
+    expect(outcome.steps[0]?.detail).toContain("already");
+    const last = outcome.kind === "ready" ? outcome.messages.at(-1) : undefined;
+    expect(last?.role).toBe("user");
+    expect(last?.content).toContain("Answer now");
+  });
+
+  it("reads a file once, and treats a second read of it the same way", async () => {
+    const provider = new ScriptedProvider([readA("1"), readA("2"), readA("3")]);
+    const outcome = await run(provider);
+
+    expect(outcome.steps).toHaveLength(2);
+    expect(outcome.steps[0]?.detail).toContain("const x = 1");
+    expect(outcome.steps[1]?.detail).not.toContain("const x = 1");
+    expect(provider.calls).toBe(2);
+  });
+
+  it("counts ./a.ts and a.ts as the same file", async () => {
+    const provider = new ScriptedProvider([
+      {
+        content: "",
+        toolCalls: [{ id: "1", name: "readFile", arguments: { path: "./a.ts" } }],
+        finishReason: "tool_calls",
+      },
+    ]);
+    const outcome = await run(provider, { alreadyProvided: ["a.ts"] });
+    expect(outcome.steps[0]?.detail).not.toContain("const x = 1");
   });
 });
 
@@ -141,12 +190,14 @@ describe("gathering information", () => {
 
   it("stops at the iteration cap rather than looping forever", async () => {
     // A model that only ever asks for more must not run indefinitely.
-    const alwaysCalls: ChatCompletionResult = {
+    // A new file each time: asking for the same one again ends gathering
+    // by itself, which is tested above.
+    const alwaysCalls = Array.from({ length: 50 }, (_, i): ChatCompletionResult => ({
       content: "",
-      toolCalls: [{ id: "1", name: "readFile", arguments: { path: "a.ts" } }],
+      toolCalls: [{ id: String(i), name: "readFile", arguments: { path: `f${i}.ts` } }],
       finishReason: "tool_calls",
-    };
-    const provider = new ScriptedProvider(Array(50).fill(alwaysCalls));
+    }));
+    const provider = new ScriptedProvider(alwaysCalls);
 
     const outcome = await investigate({
       provider,
@@ -163,13 +214,13 @@ describe("gathering information", () => {
   });
 
   it("stops when the budget runs out", async () => {
-    const alwaysCalls: ChatCompletionResult = {
+    const alwaysCalls = Array.from({ length: 50 }, (_, i): ChatCompletionResult => ({
       content: "",
-      toolCalls: [{ id: "1", name: "readFile", arguments: { path: "a.ts" } }],
+      toolCalls: [{ id: String(i), name: "readFile", arguments: { path: `f${i}.ts` } }],
       finishReason: "tool_calls",
-    };
+    }));
     const outcome = await investigate({
-      provider: new ScriptedProvider(Array(50).fill(alwaysCalls)),
+      provider: new ScriptedProvider(alwaysCalls),
       fs: new FakeFs(),
       messages: [{ role: "user", content: "go" }],
       budget: new BudgetTracker({ maxToolCalls: 2, maxTokens: 1000 }),
