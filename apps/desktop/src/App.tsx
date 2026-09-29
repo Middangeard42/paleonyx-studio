@@ -685,6 +685,7 @@ function Workspace({
 
   const changeStore = useMemo(() => new TauriChangeStore(), []);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
@@ -746,19 +747,31 @@ function Workspace({
     return path;
   }
 
+  // Never throws: a change that was applied is applied whether or not the
+  // timeline could be reloaded afterwards, so a failure here is shown in the
+  // timeline and does not fail whatever asked for the refresh.
   const refreshHistory = useCallback(async () => {
-    // A project that isn't a repo yet simply has no history — not an
-    // error, and not a reason to prompt before the agent needs to write.
-    const status = await getGitStatus();
-    if (!status.isRepository) {
+    try {
+      // A project that isn't a repo yet simply has no history — not an
+      // error, and not a reason to prompt before the agent needs to write.
+      const status = await getGitStatus();
+      if (!status.isRepository) {
+        setHistory([]);
+        setHistoryError(null);
+        return;
+      }
+      setHistory(await loadHistory(changeStore));
+      setHistoryError(null);
+    } catch (error) {
+      // History that could not be read is not the same as none. Say so
+      // rather than showing "no agent changes yet".
       setHistory([]);
-      return;
+      setHistoryError(error instanceof Error ? error.message : String(error));
     }
-    setHistory(await loadHistory(changeStore));
   }, [changeStore]);
 
   useEffect(() => {
-    refreshHistory().catch(() => setHistory([]));
+    void refreshHistory();
   }, [refreshHistory, projectRoot]);
 
   // Opening the Models panel is the natural "show me what I have"
@@ -1548,6 +1561,7 @@ function Workspace({
           <Panel title="History">
             <Timeline
               entries={history}
+              error={historyError}
               onUndo={handleUndo}
               busyId={undoingId}
               conflictById={undoConflicts}

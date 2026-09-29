@@ -248,45 +248,84 @@ pub fn record_agent_change(
     summary: String,
     state: tauri::State<ProjectState>,
 ) -> Result<String, String> {
-    let root = project_root(&state)?;
+    record_change(&project_root(&state)?, &change_json, &summary)
+}
 
-    let blob = git_with_stdin(&root, &["hash-object", "-w", "--stdin"], &change_json)?;
+fn record_change(root: &Path, change_json: &str, summary: &str) -> Result<String, String> {
+    let blob = git_with_stdin(root, &["hash-object", "-w", "--stdin"], change_json)?;
     let tree = git_with_stdin(
-        &root,
+        root,
         &["mktree"],
         &format!("100644 blob {blob}\t{RECORD_BLOB_NAME}\n"),
     )?;
 
-    let parent = git(&root, &["rev-parse", "--verify", HISTORY_REF]).ok();
-    let mut args: Vec<String> = vec!["commit-tree".into(), tree, "-m".into(), summary];
+    let parent = history_tip(root)?;
+    let mut args: Vec<String> = vec!["commit-tree".into(), tree, "-m".into(), summary.into()];
     if let Some(parent) = &parent {
         args.push("-p".into());
         args.push(parent.clone());
     }
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let commit = git(&root, &arg_refs)?;
+    let commit = git(root, &arg_refs)?;
 
-    git(&root, &["update-ref", HISTORY_REF, &commit])?;
+    move_history_ref(root, &commit, parent.as_deref())?;
     Ok(commit)
+}
+
+/// The commit the history ref points at, or `None` when nothing has been
+/// recorded yet.
+///
+/// A missing ref is an ordinary state. A failure to read it is not, and
+/// was once folded into "missing": history git could not read then showed
+/// as "no changes yet". `for-each-ref` tells them apart by succeeding with
+/// no output for a missing ref and failing for anything else.
+fn history_tip(root: &Path) -> Result<Option<String>, String> {
+    let listing = git(
+        root,
+        &[
+            "for-each-ref",
+            "--format=%(refname) %(objectname)",
+            HISTORY_REF,
+        ],
+    )?;
+    let prefix = format!("{HISTORY_REF} ");
+    Ok(listing
+        .lines()
+        .find_map(|line| line.strip_prefix(&prefix).map(str::to_string)))
+}
+
+/// Points the history ref at `commit`, but only if it still points where
+/// it did when `commit` was built on top of it (`expected`, or nowhere for
+/// a first change). Otherwise something else moved it in between, and
+/// writing anyway would drop that change from the history.
+fn move_history_ref(root: &Path, commit: &str, expected: Option<&str>) -> Result<(), String> {
+    // An empty old value means "the ref must not exist yet".
+    git(
+        root,
+        &["update-ref", HISTORY_REF, commit, expected.unwrap_or("")],
+    )
+    .map(|_| ())
 }
 
 /// Returns every recorded change, newest first, as the JSON strings that
 /// were stored. Parsing is the frontend's job, where the schema lives.
 #[tauri::command]
 pub fn list_agent_changes(state: tauri::State<ProjectState>) -> Result<Vec<String>, String> {
-    let root = project_root(&state)?;
+    list_changes(&project_root(&state)?)
+}
 
+fn list_changes(root: &Path) -> Result<Vec<String>, String> {
     // An absent ref means no agent change has ever been recorded here,
     // which is an ordinary state and not an error.
-    if git(&root, &["rev-parse", "--verify", HISTORY_REF]).is_err() {
+    let Some(tip) = history_tip(root)? else {
         return Ok(Vec::new());
-    }
+    };
 
-    let revisions = git(&root, &["rev-list", HISTORY_REF])?;
+    let revisions = git(root, &["rev-list", &tip])?;
     let mut records = Vec::new();
     for revision in revisions.lines() {
         let record = git(
-            &root,
+            root,
             &["cat-file", "-p", &format!("{revision}:{RECORD_BLOB_NAME}")],
         )?;
         records.push(record);
@@ -346,6 +385,107 @@ mod tests {
         let status = repository_status(&dir).unwrap();
         assert!(status.is_repository);
         assert!(status.has_commits);
+    }
+
+    fn identified_repo(name: &str) -> ScratchDir {
+        let dir = scratch(name);
+        init(&dir);
+        git(&dir, &["config", "user.name", "Test"]).unwrap();
+        git(&dir, &["config", "user.email", "test@example.com"]).unwrap();
+        dir
+    }
+
+    fn unreadable(dir: &Path) {
+        let config = dir.join(".git").join("config");
+        let text = std::fs::read_to_string(&config).unwrap();
+        std::fs::write(
+            &config,
+            text.replace(
+                "repositoryformatversion = 0",
+                "repositoryformatversion = 99",
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn nothing_recorded_yet_is_an_empty_history_not_an_error() {
+        let dir = identified_repo("empty-history");
+        assert_eq!(list_changes(&dir), Ok(Vec::new()));
+    }
+
+    #[test]
+    fn each_change_is_recorded_on_top_of_the_last_and_listed_newest_first() {
+        let dir = identified_repo("chain");
+        record_change(&dir, r#"{"id":"1"}"#, "first").unwrap();
+        record_change(&dir, r#"{"id":"2"}"#, "second").unwrap();
+        record_change(&dir, r#"{"id":"3"}"#, "third").unwrap();
+        assert_eq!(
+            list_changes(&dir).unwrap(),
+            vec![r#"{"id":"3"}"#, r#"{"id":"2"}"#, r#"{"id":"1"}"#]
+        );
+    }
+
+    /// The regression: any failure reading the history ref was taken to
+    /// mean it did not exist, so history that git could not read showed as
+    /// "no changes yet".
+    #[test]
+    fn history_git_cannot_read_is_an_error_not_an_empty_list() {
+        let dir = identified_repo("unreadable-history");
+        record_change(&dir, r#"{"id":"1"}"#, "first").unwrap();
+        unreadable(&dir);
+        assert!(list_changes(&dir).is_err(), "reported as no history");
+    }
+
+    /// A guard rather than a reproduced bug: git's own `commit-tree`
+    /// already refuses a parent that names nothing, so this held before
+    /// too. It pins the property that matters, that a history ref which
+    /// cannot be used is left exactly as it was.
+    #[test]
+    fn a_history_ref_that_cannot_be_read_is_never_replaced() {
+        let dir = identified_repo("broken-ref");
+        record_change(&dir, r#"{"id":"1"}"#, "first").unwrap();
+        let ref_file = dir
+            .join(".git")
+            .join("refs")
+            .join("paleonyx")
+            .join("history");
+        // A commit id that names nothing in this repository.
+        let missing = "1".repeat(40);
+        std::fs::write(&ref_file, format!("{missing}\n")).unwrap();
+
+        assert!(record_change(&dir, r#"{"id":"2"}"#, "second").is_err());
+        assert_eq!(std::fs::read_to_string(&ref_file).unwrap().trim(), missing);
+    }
+
+    #[test]
+    fn a_change_is_refused_when_the_history_moved_since_it_was_built() {
+        let dir = identified_repo("moved");
+        let first = record_change(&dir, r#"{"id":"1"}"#, "first").unwrap();
+        // A commit for the same tree, so it is a valid thing to point at.
+        let other = git(
+            &dir,
+            &["commit-tree", &format!("{first}^{{tree}}"), "-m", "other"],
+        )
+        .unwrap();
+
+        // Built when nothing existed, but the ref now points at `first`.
+        assert!(move_history_ref(&dir, &other, None).is_err());
+        // Built on top of a tip that is no longer the tip.
+        assert!(move_history_ref(&dir, &other, Some(&other)).is_err());
+        assert_eq!(history_tip(&dir).unwrap(), Some(first.clone()));
+
+        // Built on the real tip, it goes through.
+        move_history_ref(&dir, &other, Some(&first)).unwrap();
+        assert_eq!(history_tip(&dir).unwrap(), Some(other));
+    }
+
+    #[test]
+    fn the_history_tip_is_none_until_something_is_recorded() {
+        let dir = identified_repo("tip");
+        assert_eq!(history_tip(&dir), Ok(None));
+        let first = record_change(&dir, r#"{"id":"1"}"#, "first").unwrap();
+        assert_eq!(history_tip(&dir), Ok(Some(first)));
     }
 
     /// What git said in each case, from a real run.

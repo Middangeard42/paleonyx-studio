@@ -13,6 +13,11 @@ export interface TimelineProps {
   busyId?: string;
   /** Conflict text from a refused undo, keyed by change id. */
   conflictById?: Record<string, string>;
+  /**
+   * Why the history could not be read. Shown in place of "no changes yet":
+   * a history that failed to load must not look like an empty one.
+   */
+  error?: string | null;
 }
 
 /**
@@ -21,28 +26,42 @@ export interface TimelineProps {
  * conversation turn, so a change stays reviewable and reversible long
  * after the exchange that produced it has scrolled away.
  */
-export function Timeline({ entries, onUndo, busyId, conflictById }: TimelineProps) {
+export function Timeline({ entries, onUndo, busyId, conflictById, error }: TimelineProps) {
+  const problem = error ? (
+    <p
+      role="alert"
+      className="rounded border border-status-danger/40 bg-status-danger/10 p-2 text-xs text-text-secondary"
+    >
+      Couldn&apos;t read the change history. {error}
+    </p>
+  ) : null;
+
   if (entries.length === 0) {
     return (
-      <p className="text-xs text-text-tertiary">
-        No agent changes yet. Anything the agent applies shows up here, and can
-        be undone from here.
-      </p>
+      problem ?? (
+        <p className="text-xs text-text-tertiary">
+          No agent changes yet. Anything the agent applies shows up here, and can
+          be undone from here.
+        </p>
+      )
     );
   }
 
   return (
-    <ol className="flex flex-col gap-2">
-      {entries.map((entry) => (
-        <TimelineRow
-          key={entry.record.id}
-          entry={entry}
-          onUndo={onUndo}
-          busy={busyId === entry.record.id}
-          conflict={conflictById?.[entry.record.id]}
-        />
-      ))}
-    </ol>
+    <div className="flex flex-col gap-2">
+      {problem}
+      <ol className="flex flex-col gap-2">
+        {entries.map((entry) => (
+          <TimelineRow
+            key={entry.record.id}
+            entry={entry}
+            onUndo={onUndo}
+            busy={busyId === entry.record.id}
+            conflict={conflictById?.[entry.record.id]}
+          />
+        ))}
+      </ol>
+    </div>
   );
 }
 
