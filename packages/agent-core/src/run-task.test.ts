@@ -242,6 +242,26 @@ describe("runAgentTask with the offline demo responder", () => {
     expect(result.explanation).toContain("repaired");
   });
 
+  it("says the model ran out of room, and does not ask again, when a reply is cut off", async () => {
+    let call = 0;
+    const provider = new MockAdapter({ respond: demoRespond, latencyMs: 0 });
+    provider.chat = async () => {
+      call += 1;
+      return { content: '```json\n{"summary": "x', finishReason: "length" };
+    };
+
+    const result = await runAgentTask({
+      provider,
+      fs: new FakeFs({ "src/sum.ts": BUGGY_SUM }),
+      input: { taskType: "bug-fix", instructions: "sum returns NaN", targetFiles: ["src/sum.ts"] },
+      skillLevel: "experienced",
+    });
+
+    expect(call).toBe(1);
+    expect(result.escalation?.reason).toBe("low-confidence");
+    expect(result.escalation?.message).toContain("ran out of room");
+  });
+
   it("escalates on a tool failure instead of proceeding without the file", async () => {
     const result = await runAgentTask({
       provider: provider(),
