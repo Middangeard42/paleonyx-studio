@@ -13,6 +13,8 @@ export interface ParsedAgentResponse {
   explanation: string;
   diff: FileDiff[];
   confidence: ConfidenceLevel;
+  /** Characters put back to make the text parse; 0 when it parsed as sent. */
+  repairs: number;
 }
 
 export type ParseResult =
@@ -33,12 +35,9 @@ export function parseAgentResponse(raw: string): ParseResult {
   const fenceMatch = raw.match(JSON_FENCE);
   const jsonText = fenceMatch?.[1] ?? raw;
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonText);
-  } catch (error) {
-    return { ok: false, error: `Response was not valid JSON: ${(error as Error).message}` };
-  }
+  const decoded = decodeJson(jsonText);
+  if (!decoded.ok) return decoded;
+  const parsed = decoded.value;
 
   if (typeof parsed !== "object" || parsed === null) {
     return { ok: false, error: "Response JSON was not an object." };
@@ -70,8 +69,79 @@ export function parseAgentResponse(raw: string): ParseResult {
       confidence: record.confidence as ConfidenceLevel,
       steps: steps.value,
       diff: diff.value,
+      repairs: decoded.repairs,
     },
   };
+}
+
+const MAX_REPAIRS = 50;
+
+/**
+ * Parses the model's JSON, mending the two slips small models make in a
+ * long response: a comma dropped between two elements, and a raw line
+ * break inside a string.
+ *
+ * Only those two, and only by adding one character at the position the
+ * parser names. Anything else fails as before. In particular a response
+ * that was cut off is never completed: V8 reports it with the same
+ * "Expected ',' or ']'" wording as a dropped comma, at the end of the
+ * text, and closing it would present a half-written file as finished.
+ * The result still goes through the contract checks below.
+ */
+function decodeJson(
+  original: string
+): { ok: true; value: unknown; repairs: number } | { ok: false; error: string } {
+  let text = original;
+  for (let repairs = 0; ; repairs++) {
+    try {
+      return { ok: true, value: JSON.parse(text), repairs };
+    } catch (error) {
+      const message = (error as Error).message;
+      const failure = `Response was not valid JSON: ${message}${excerpt(text, message)}`;
+      if (repairs >= MAX_REPAIRS) return { ok: false, error: failure };
+      const mended = mend(text, message);
+      if (mended === undefined) return { ok: false, error: failure };
+      text = mended;
+    }
+  }
+}
+
+function errorPosition(message: string): number | undefined {
+  const match = /position (\d+)/.exec(message);
+  return match ? Number(match[1]) : undefined;
+}
+
+function mend(text: string, message: string): string | undefined {
+  const position = errorPosition(message);
+  if (position === undefined) return undefined;
+  // At the end of the text there is no character, so a cut-off response
+  // matches neither branch below.
+  const char = text[position] ?? "";
+
+  if (message.startsWith("Bad control character")) {
+    const escapes: Record<string, string> = { "\n": "\\n", "\r": "\\r", "\t": "\\t" };
+    const escaped = escapes[char];
+    return escaped === undefined
+      ? undefined
+      : text.slice(0, position) + escaped + text.slice(position + 1);
+  }
+
+  const missingComma =
+    message.startsWith("Expected ',' or ']' after array element") ||
+    message.startsWith("Expected ',' or '}' after property value");
+  if (missingComma && (char === "{" || char === "[" || char === '"')) {
+    return text.slice(0, position) + "," + text.slice(position);
+  }
+  return undefined;
+}
+
+/** The text around the failure, so a reader can see what the parser saw. */
+function excerpt(text: string, message: string): string {
+  const position = errorPosition(message);
+  if (position === undefined) return "";
+  const start = Math.max(0, position - 40);
+  const near = text.slice(start, position + 20).replace(/\s+/g, " ");
+  return ` (near: ${near})`;
 }
 
 function parseSteps(

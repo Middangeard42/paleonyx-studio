@@ -236,8 +236,10 @@ export async function runAgentTask(
         { role: "assistant", content: result.content },
         {
           role: "user",
-          content:
-            "Reply with only the fenced ```json block described earlier. No tool calls, no prose around it.",
+          // The parser's own words go back with the reminder: "not valid
+          // JSON near ..." lets a model fix that spot rather than
+          // rewriting everything and slipping somewhere else.
+          content: `Your reply could not be used: ${parsed.error}. Reply with only the fenced \`\`\`json block described earlier, valid JSON with a comma between every array element. No tool calls, no prose around it.`,
         },
       ],
     });
@@ -264,11 +266,17 @@ export async function runAgentTask(
   };
   options.onPlan?.(plan);
 
+  // A response that needed mending is shown as such: the reader should
+  // check it more closely than one that parsed as sent.
+  const repaired = parsed.value.repairs > 0;
+
   return {
     plan,
-    explanation: parsed.value.explanation,
+    explanation: repaired
+      ? `${parsed.value.explanation}\n\nNote: the model's reply had a formatting slip that was repaired automatically (${parsed.value.repairs} ${parsed.value.repairs === 1 ? "fix" : "fixes"}). Read the changes closely before applying.`
+      : parsed.value.explanation,
     diff: taskProducesEdits(taskType) ? parsed.value.diff : [],
-    confidence: parsed.value.confidence,
+    confidence: repaired && parsed.value.confidence === "high" ? "medium" : parsed.value.confidence,
     budgetUsage: budget.current,
     investigation: investigation.steps,
     filesSeen,
