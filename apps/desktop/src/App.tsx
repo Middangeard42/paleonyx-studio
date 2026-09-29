@@ -15,7 +15,7 @@ import {
   PreviewPanel,
   SkillPicker,
   ResizeHandle,
-  clampWidth,
+  clampSize,
   ProjectWizard,
   SearchPanel,
   StatusBar,
@@ -27,6 +27,12 @@ import {
   useLocalPreference,
 } from "@paleonyx/ui";
 import { applyAgentChange, loadHistory, revertAgentChange } from "@paleonyx/vcs";
+import {
+  HISTORY_DEFAULT_HEIGHT,
+  HISTORY_MIN_HEIGHT,
+  maxHistoryHeight,
+} from "./panel-layout.js";
+import { useElementHeight } from "./useElementHeight.js";
 import {
   EMPTY_WORKSPACE,
   checkWritable,
@@ -642,6 +648,13 @@ function Workspace({
     `paleonyx.width.preview:${projectRoot}`,
     480
   );
+  // The Agent panel takes what is left, so History's height is the setting.
+  const [historyHeight, setHistoryHeight] = useLocalPreference<number>(
+    `paleonyx.height.history:${projectRoot}`,
+    HISTORY_DEFAULT_HEIGHT
+  );
+  const [rightColumnRef, rightColumnHeight] = useElementHeight();
+  const historyMax = maxHistoryHeight(rightColumnHeight);
 
   /**
    * Per project, not per user (CLAUDE.md §6): letting the agent write
@@ -1349,7 +1362,7 @@ function Workspace({
           <>
         <div
           className="h-full shrink-0"
-          style={{ width: clampWidth(leftWidth, 180, 560) }}
+          style={{ width: clampSize(leftWidth, 180, 560) }}
         >
           {activePanel === "search" ? (
             <Panel title="Search">
@@ -1371,8 +1384,8 @@ function Workspace({
 
         <ResizeHandle
           label="Resize the file panel"
-          width={clampWidth(leftWidth, 180, 560)}
-          onWidthChange={setLeftWidth}
+          size={clampSize(leftWidth, 180, 560)}
+          onSizeChange={setLeftWidth}
           min={180}
           max={560}
         />
@@ -1420,8 +1433,8 @@ function Workspace({
             {previewOpen && openPaths.length > 0 && (
               <ResizeHandle
                 label="Resize the preview"
-                width={clampWidth(previewWidth, 280, 900)}
-                onWidthChange={setPreviewWidth}
+                size={clampSize(previewWidth, 280, 900)}
+                onSizeChange={setPreviewWidth}
                 min={280}
                 max={900}
                 invert
@@ -1438,7 +1451,7 @@ function Workspace({
                 style={
                   openPaths.length === 0
                     ? undefined
-                    : { width: clampWidth(previewWidth, 280, 900) }
+                    : { width: clampSize(previewWidth, 280, 900) }
                 }
               >
                 <PreviewPanel
@@ -1476,17 +1489,19 @@ function Workspace({
 
         <ResizeHandle
           label="Resize the agent panel"
-          width={clampWidth(rightWidth, 300, 720)}
-          onWidthChange={setRightWidth}
+          size={clampSize(rightWidth, 300, 720)}
+          onSizeChange={setRightWidth}
           min={300}
           max={720}
           invert
         />
 
         <div
-          className="flex h-full shrink-0 flex-col gap-3 overflow-auto p-3"
-          style={{ width: clampWidth(rightWidth, 300, 720) }}
+          ref={rightColumnRef}
+          className="flex h-full shrink-0 flex-col"
+          style={{ width: clampSize(rightWidth, 300, 720) }}
         >
+          <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
           {needsRepo && (
             <div className="rounded-md border border-status-warning/40 bg-status-warning/10 p-3">
               <p className="text-sm font-medium text-text-primary">
@@ -1509,6 +1524,7 @@ function Workspace({
             </div>
           )}
 
+          <div className="min-h-0 flex-1">
           <AgentPanel
             skillLevel={skillLevel}
             onSkillLevelChange={setSkillLevel}
@@ -1564,7 +1580,23 @@ function Workspace({
                 : null
             }
           />
+          </div>
+          </div>
 
+          <ResizeHandle
+            label="Resize the history panel"
+            orientation="horizontal"
+            size={clampSize(historyHeight, HISTORY_MIN_HEIGHT, historyMax)}
+            onSizeChange={setHistoryHeight}
+            min={HISTORY_MIN_HEIGHT}
+            max={historyMax}
+            invert
+          />
+
+          <div
+            className="shrink-0 p-3"
+            style={{ height: clampSize(historyHeight, HISTORY_MIN_HEIGHT, historyMax) }}
+          >
           <Panel title="History">
             <Timeline
               entries={history}
@@ -1574,6 +1606,7 @@ function Workspace({
               conflictById={undoConflicts}
             />
           </Panel>
+          </div>
         </div>
           </>
         )}
