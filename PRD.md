@@ -491,12 +491,29 @@ user-opted-in remote providers.
    and `source` as optional fields so both remaining routes add data
    rather than replacing the shape.
 
+   **Screenshot option: deferred.** Not built, and not to be built piecemeal.
+   The owner has a larger design-mode build planned, and the screenshot
+   route (capture from the sandboxed frame, and the labeling a remote
+   vision model would need) is designed there, together with the
+   source-tagging review below.
+
    **Revisit at the end of v1: build-time source tagging.** Deferred by
    decision, not dropped — it is the most precise of the three and the
    only one that handles generated markup reliably, but it is
    per-framework work that pays off only once the frameworks people
    actually use here are known. Reassess before v1 ships: if design mode
    is being used and search is missing elements, this is the fix.
+
+   **Owner's leaning (not a commitment):** support the five most-used UI
+   frameworks first (React, Angular, Vue.js, Next.js, Svelte) and add more
+   as demand appears. Suggested order: React, Next.js, Vue, Svelte,
+   Angular. React and Next.js share most of the work, and a single Vite
+   plugin might carry React, Vue and Svelte. These are recollections and
+   not checked against current framework versions; verify when building.
+   Whatever is built adds attributes to the user's own build, so it needs
+   a visible opt-in, and any plugin it depends on must pass CLAUDE.md §9.
+   Still to do at the review: rank frameworks by what people actually open
+   here, and measure how often search fails.
 
 2. **Web companion transport — Cloudflare, with a local-first question
    attached.** Cloudflare is the intended way to reach the web companion
@@ -523,6 +540,12 @@ user-opted-in remote providers.
    Whichever is chosen, it is an explicit opt-in and it is labeled while
    active — the same bar the model catalog's live refresh clears (§9
    decision 5).
+
+   **Decided for now: same-machine only.** Nothing is built for the other
+   two. A user-initiated tunnel stays a possible later addition behind the
+   visible opt-in described above, and the encrypted relay is deferred
+   until there is demand. Phone access away from the local network is
+   therefore not supported yet.
 
 3. **Publishing to GitHub — open source, with donations.** The owner's
    direction is an open-source project that accepts donations as thanks.
@@ -558,7 +581,11 @@ user-opted-in remote providers.
    the owner can still relicense, but once outside contributions are
    merged that stops being true without each contributor's agreement, so
    a contribution policy (a DCO or a CLA) should exist before the first
-   one is accepted.
+   one is accepted. **Decided: a DCO.** Contributors keep their copyright
+   and sign off each commit (`git commit -s`), certifying they may submit
+   it under LGPL-3.0-or-later. The consequence is accepted: the licence
+   cannot be changed later without every contributor's agreement, and a
+   CLA cannot be required retroactively. See `CONTRIBUTING.md`.
 
    The repository is public on GitHub, `main` is the default branch, and
    commits carry `support@paleonyx.com` rather than a personal address.
