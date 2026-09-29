@@ -193,6 +193,55 @@ describe("runAgentTask with the offline demo responder", () => {
     expect(result.escalation?.reason).toBe("low-confidence");
   });
 
+  it("names the parse error when it asks again, so the model can fix that spot", async () => {
+    const requests: string[] = [];
+    const provider = new MockAdapter({
+      respond: (request) => {
+        const last = request.messages[request.messages.length - 1]?.content ?? "";
+        requests.push(last);
+        if (requests.length === 1) {
+          return '```json\n{"summary": "say "hi" now"}\n```';
+        }
+        return demoRespond(request);
+      },
+      latencyMs: 0,
+    });
+
+    await runAgentTask({
+      provider,
+      fs: new FakeFs({ "src/sum.ts": BUGGY_SUM }),
+      input: { taskType: "bug-fix", instructions: "sum returns NaN", targetFiles: ["src/sum.ts"] },
+      skillLevel: "experienced",
+    });
+
+    expect(requests[1]).toContain("not valid JSON");
+  });
+
+  it("uses a response with a dropped comma, but says so and never rates it high", async () => {
+    const provider = new MockAdapter({
+      respond: (request) => {
+        const good = demoRespond(request);
+        // Drop the first comma that separates two objects.
+        const broken = good.replace(/\},(\s*)\{/, "}$1{");
+        expect(broken).not.toBe(good);
+        return broken;
+      },
+      latencyMs: 0,
+    });
+
+    const result = await runAgentTask({
+      provider,
+      fs: new FakeFs({ "src/sum.ts": BUGGY_SUM }),
+      input: { taskType: "bug-fix", instructions: "sum returns NaN", targetFiles: ["src/sum.ts"] },
+      skillLevel: "experienced",
+    });
+
+    expect(result.escalation).toBeUndefined();
+    expect(result.diff.length).toBeGreaterThan(0);
+    expect(result.confidence).not.toBe("high");
+    expect(result.explanation).toContain("repaired");
+  });
+
   it("escalates on a tool failure instead of proceeding without the file", async () => {
     const result = await runAgentTask({
       provider: provider(),
