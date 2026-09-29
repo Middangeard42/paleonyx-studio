@@ -390,8 +390,13 @@ product's core trust promise breaks.
   Each process tree goes into a Windows job object, so ending it ends
   everything it started, and the app's exit ends it too. Elsewhere the
   child leads a process group of its own and the group is signalled: that
-  ends what the child started, but not a descendant that leaves the group
-  with `setsid`, and not the tree if the app itself dies. Commands that
+  ends what the child started, and the app's normal exit ends every
+  connected server's group after a short wait. It does not end a
+  descendant that leaves the group with `setsid`, a command still running
+  when the app exits, or anything if the app is killed or crashes. The
+  Linux "die with the parent" option (`PR_SET_PDEATHSIG`) was tried and
+  not shipped: it ends only the direct child, so an `npx` server's own
+  child keeps running, and it has no macOS counterpart. Commands that
   wait on a process are `#[tauri::command(async)]`: a plain command runs
   on the main thread.
 - **Budgets are enforced in `agent-core`, not just displayed in the UI.**
@@ -574,7 +579,7 @@ the work:
   desktop end-to-end suite, the app, or a live model: they need Windows, a
   display, or Ollama, and none of those exist there.
 - With the system libraries from `docs/cloud-sessions.md` installed, the
-  Rust shell builds on Linux: `cargo check --tests`, `cargo test` (78
+  Rust shell builds on Linux: `cargo check --tests`, `cargo test` (81
   tests; the Windows-only ones compile out), `cargo fmt --check` and
   `cargo clippy --all-targets -- -D warnings` all pass there. That checks
   what compiles and runs on Linux only. A change to Windows-only code

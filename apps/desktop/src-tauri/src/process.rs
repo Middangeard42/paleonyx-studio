@@ -140,7 +140,8 @@ pub fn prepare_child(command: &mut Command) {
 /// Elsewhere the tree is a process group, and `kill` signals the group.
 /// That is weaker than a job object in two ways. A descendant that leaves
 /// the group (a daemon calling `setsid`) is out of reach, and nothing ends
-/// the group if the app itself exits or crashes; the caller has to ask.
+/// the group if the app itself is killed or crashes; the caller has to ask.
+/// A normal exit does ask: `McpState::shutdown` ends every server's group.
 pub struct ProcessGroup {
     #[cfg(windows)]
     job: windows::Win32::Foundation::HANDLE,
@@ -150,9 +151,13 @@ pub struct ProcessGroup {
 }
 
 // A job handle is a reference to a kernel object; Windows lets any
-// thread use it.
+// thread use it, including two at once: the calls made through it
+// (`TerminateJobObject`) are safe to overlap. It is shared between the
+// thread supervising a server and the app's exit.
 #[cfg(windows)]
 unsafe impl Send for ProcessGroup {}
+#[cfg(windows)]
+unsafe impl Sync for ProcessGroup {}
 
 impl ProcessGroup {
     #[cfg(windows)]
