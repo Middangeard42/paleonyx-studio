@@ -802,7 +802,16 @@ function Workspace({
     // folder, so it is offered explicitly rather than done quietly —
     // including under auto-apply, which skips the approval gate for
     // changes, not for creating a repository.
-    const status = await getGitStatus();
+    let status;
+    try {
+      status = await getGitStatus();
+    } catch (error) {
+      // git could not say either way (a repository owned by another user,
+      // say). That is not "no repository": offering to create one would
+      // put a second repo on top of the real one.
+      setApplyError(error instanceof Error ? error.message : String(error));
+      return;
+    }
     if (!status.isRepository) {
       setNeedsRepo(true);
       return;
