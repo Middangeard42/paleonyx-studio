@@ -230,3 +230,56 @@ describe("tool calls and their results reach the wire intact", () => {
     expect(messages[0]).toEqual({ role: "user", content: "why is it broken" });
   });
 });
+
+describe("context size and truncation", () => {
+  function captureBody() {
+    let body: { options?: Record<string, unknown> } = {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: { body: string }) => {
+        body = JSON.parse(init.body);
+        return reply({ role: "assistant", content: "ok" });
+      })
+    );
+    return () => body;
+  }
+
+  // Ollama sizes the context itself when none is sent, often at a few
+  // thousand tokens, and a long reply is then cut off mid-way.
+  it("asks for a context window rather than leaving it to Ollama's default", async () => {
+    const sent = captureBody();
+    await new OllamaAdapter({ modelId: "m", contextWindow: 8192 }).chat({
+      messages: [{ role: "user", content: "hi" }],
+    });
+    expect(sent().options?.num_ctx).toBe(8192);
+  });
+
+  it("caps what it asks for, so a model's documented maximum does not exhaust memory", async () => {
+    const sent = captureBody();
+    await new OllamaAdapter({ modelId: "m", contextWindow: 262144 }).chat({
+      messages: [{ role: "user", content: "hi" }],
+    });
+    expect(sent().options?.num_ctx).toBe(16384);
+  });
+
+  it("reports a reply that ran out of room as length, not stop", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              message: { role: "assistant", content: '{"summary": "x' },
+              done: true,
+              done_reason: "length",
+            }),
+            { status: 200 }
+          )
+      )
+    );
+    const result = await new OllamaAdapter({ modelId: "m" }).chat({
+      messages: [{ role: "user", content: "hi" }],
+    });
+    expect(result.finishReason).toBe("length");
+  });
+});

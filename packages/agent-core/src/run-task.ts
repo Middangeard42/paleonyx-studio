@@ -228,7 +228,11 @@ export async function runAgentTask(
   // is several messages back by then. Smaller models especially need the
   // reminder. One retry, budget permitting: repeated nudging would be
   // pestering a model that cannot do it.
-  if (!parsed.ok && !budget.isExhausted()) {
+  //
+  // Not when the reply was cut off: the same request would be cut off at
+  // the same place, and the reason is one the user can act on.
+  const cutOff = result.finishReason === "length";
+  if (!parsed.ok && !cutOff && !budget.isExhausted()) {
     options.onStatus?.("Asking for the summary again…");
     const retry = await options.provider.chat({
       messages: [
@@ -247,6 +251,16 @@ export async function runAgentTask(
       (retry.usage?.promptTokens ?? 0) + (retry.usage?.completionTokens ?? 0)
     );
     parsed = parseAgentResponse(retry.content);
+  }
+
+  if (!parsed.ok && cutOff) {
+    return escalate(
+      taskType,
+      budget,
+      "low-confidence",
+      "The model ran out of room before it finished its answer, so the plan is incomplete and was not used. Try a smaller task, a model with a larger context window, or raise the model's context size.",
+      investigation.steps
+    );
   }
 
   if (!parsed.ok) {

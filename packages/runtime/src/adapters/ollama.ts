@@ -48,7 +48,16 @@ interface OllamaChatResponse {
   done: boolean;
   prompt_eval_count?: number;
   eval_count?: number;
+  done_reason?: string;
 }
+
+/**
+ * The most context a request asks Ollama for. A model's documented
+ * maximum can be 256k tokens, and allocating that would exhaust memory
+ * on the machines this is meant for; a project-sized task fits well
+ * within this.
+ */
+const MAX_NUM_CTX = 16384;
 
 /**
  * Talks to a local Ollama instance over its native /api/chat endpoint
@@ -61,10 +70,12 @@ export class OllamaAdapter implements ChatModelProvider {
   readonly model: ModelInfo;
   private readonly baseUrl: string;
   private readonly modelId: string;
+  private readonly numCtx: number;
 
   constructor(options: OllamaAdapterOptions) {
     this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
     this.modelId = options.modelId;
+    this.numCtx = Math.min(options.contextWindow ?? 8192, MAX_NUM_CTX);
     this.model = {
       id: options.modelId,
       label: options.modelLabel ?? options.modelId,
@@ -91,6 +102,9 @@ export class OllamaAdapter implements ChatModelProvider {
         options: {
           temperature: request.temperature,
           num_predict: request.maxTokens,
+          // Without this Ollama picks its own, often a few thousand
+          // tokens, and a long reply is cut off partway through.
+          num_ctx: this.numCtx,
         },
       }),
     });
@@ -106,7 +120,11 @@ export class OllamaAdapter implements ChatModelProvider {
     return {
       content: data.message.content,
       toolCalls,
-      finishReason: toolCalls ? "tool_calls" : "stop",
+      finishReason: toolCalls
+        ? "tool_calls"
+        : data.done_reason === "length"
+          ? "length"
+          : "stop",
       usage: {
         promptTokens: data.prompt_eval_count ?? 0,
         completionTokens: data.eval_count ?? 0,
@@ -124,6 +142,7 @@ export class OllamaAdapter implements ChatModelProvider {
         model: this.modelId,
         messages: request.messages.map(toOllamaMessage),
         stream: true,
+        options: { num_ctx: this.numCtx },
       }),
     });
 
