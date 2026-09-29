@@ -262,6 +262,21 @@ describe("runAgentTask with the offline demo responder", () => {
     expect(result.escalation?.message).toContain("ran out of room");
   });
 
+  it("builds a new project from file blocks, as a small model writes them", async () => {
+    const reply =
+      '```json\n{"summary": "A calculator", "steps": [{"id": "1", "description": "Wrote it"}], "explanation": "Run it with python.", "diff": [], "confidence": "high"}\n```\n\n<<<FILE calculator.py\nprint(1 + 1)\nFILE>>>\n<<<FILE README.md\n# Calculator\nFILE>>>';
+    const result = await runAgentTask({
+      provider: new MockAdapter({ respond: () => reply, latencyMs: 0 }),
+      fs: new FakeFs({}),
+      input: { taskType: "scaffold", instructions: "a simple calculator", targetFiles: [] },
+      skillLevel: "new-to-coding",
+    });
+
+    expect(result.escalation).toBeUndefined();
+    expect(result.diff.map((d) => d.filePath)).toEqual(["calculator.py", "README.md"]);
+    expect(result.diff.every((d) => isCreation(d))).toBe(true);
+  });
+
   it("escalates on a tool failure instead of proceeding without the file", async () => {
     const result = await runAgentTask({
       provider: provider(),

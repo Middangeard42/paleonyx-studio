@@ -15,7 +15,7 @@ const RESPONSE_CONTRACT = `Respond with exactly one fenced `.concat(
     { "id": string, "description": string, "targetFiles": string[] }
   ],
   "explanation": string,           // your explanation, pitched at the requested skill level
-  "diff": [                        // empty array for an Explain task; hunks for a Bug Fix or New Project task
+  "diff": [                        // empty array for Explain and for New Project; hunks only for edits to files that already exist
     {
       "filePath": string,
       "hunks": [
@@ -29,7 +29,11 @@ const RESPONSE_CONTRACT = `Respond with exactly one fenced `.concat(
     }
   ],
   "confidence": "high" | "medium" | "low"
-}`
+}
+After the closing fence, write each new file as plain text, never as JSON:
+<<<FILE path/to/file.ext
+exact file contents
+FILE>>>`
 );
 
 /**
@@ -69,14 +73,14 @@ const EXPLANATION_SCOPE =
  * that does not, and the next request can grow it.
  */
 const SCAFFOLD_INSTRUCTIONS = [
-  "Task type: New Project. The user has described something they want to build and has an empty or nearly empty folder. Produce the first working version as a set of new files in `diff`.",
+  "Task type: New Project. The user has described something they want to build and has an empty or nearly empty folder. Produce the first working version as a set of new files, each written as a `<<<FILE` block after the JSON block; `diff` stays empty.",
   "Aim for the smallest thing that actually runs — usually three to eight files. A running skeleton the user can open and see working beats a fuller structure that does not start.",
   "Among the ways of building what was asked for, take the one with the fewest moving parts and the least to install. Do not add a dependency the project can do without. This chooses between approaches that meet the stated target — it is not a reason to build something else.",
   "If you cannot build what was asked for, or judge that a different form is the better first version, say so in the first sentence of `explanation` and say why. Never substitute silently.",
   "Anything that runs in a browser with no build step must be plain JavaScript. A browser cannot execute TypeScript: `<script src=\"app.ts\">` fails to load, and type annotations or `export` in a classic script are syntax errors. Use `.js` files, and `<script type=\"module\">` if you want imports. Only write TypeScript when the project actually has a build step, and then include it.",
   "The result must run as delivered. Do not reference a file, script, or command the project does not contain.",
   "Include a README.md giving, in plain language, the exact steps to run it. Assume the reader has never run a project before.",
-  "Every file is new, so every hunk is all `add` lines.",
+  "Every file is new, so none of them belongs in `diff`.",
 ].join(" ");
 
 /**
@@ -165,7 +169,7 @@ const TASK_TYPE_INSTRUCTIONS: Record<AgentTaskType, string> = {
  * apply and looks like a hallucination.
  */
 const NEW_FILE_INSTRUCTIONS =
-  "To add a file that does not exist yet, give its path as `filePath` and a single hunk whose lines are all `add`. Do not write `context` or `remove` lines for a file that is not there — there is nothing for them to match.";
+  "To add a file that does not exist yet, do not put it in `diff`. Write it after the JSON block as plain text: a line `<<<FILE path/to/file.ext`, then the file's exact contents, then a line `FILE>>>`. Nothing inside is escaped or quoted. Use one such block per new file. Never write `context` or `remove` lines for a file that is not there — there is nothing for them to match.";
 
 /**
  * The shape of a hunk that edits a file that already exists.

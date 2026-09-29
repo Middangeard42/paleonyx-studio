@@ -31,7 +31,10 @@ const DIFF_LINE_TYPES: readonly DiffLineType[] = ["context", "add", "remove"];
  * doesn't match the contract in prompt.ts's RESPONSE_CONTRACT fails with
  * a specific error message rather than silently coercing bad data.
  */
-export function parseAgentResponse(raw: string): ParseResult {
+export function parseAgentResponse(rawResponse: string): ParseResult {
+  const blocks = extractFileBlocks(rawResponse);
+  if (!blocks.ok) return blocks;
+  const raw = blocks.rest;
   const fenceMatch = raw.match(JSON_FENCE);
   const jsonText = fenceMatch?.[1] ?? raw;
 
@@ -58,7 +61,9 @@ export function parseAgentResponse(raw: string): ParseResult {
   const steps = parseSteps(record.steps);
   if (!steps.ok) return steps;
 
-  const diff = parseDiff(record.diff);
+  // Left out when the files are all in blocks; anything else present
+  // still has to be a well-formed diff.
+  const diff = parseDiff(record.diff === undefined && blocks.files.length > 0 ? [] : record.diff);
   if (!diff.ok) return diff;
 
   return {
@@ -68,10 +73,58 @@ export function parseAgentResponse(raw: string): ParseResult {
       explanation: record.explanation,
       confidence: record.confidence as ConfidenceLevel,
       steps: steps.value,
-      diff: diff.value,
+      diff: [...diff.value, ...blocks.files],
       repairs: decoded.repairs,
     },
   };
+}
+
+const FILE_BLOCK = /<<<FILE[ \t]*([^\r\n]*)\r?\n([\s\S]*?)FILE>>>/g;
+
+/**
+ * New files arrive as plain text between markers, not as JSON.
+ *
+ * Written as one JSON object per line, a whole new project is a
+ * several-hundred-element array that a small model has to keep balanced,
+ * and it loses a bracket or a comma somewhere. Text between markers has
+ * nothing to balance: whatever is in the block is the file, byte for
+ * byte. A block that is never closed is refused, not kept, so a reply
+ * that was cut off cannot hand over half a file.
+ */
+function extractFileBlocks(
+  raw: string
+):
+  | { ok: true; files: FileDiff[]; rest: string }
+  | { ok: false; error: string } {
+  const files: FileDiff[] = [];
+  let problem: string | undefined;
+  const rest = raw.replace(FILE_BLOCK, (_whole, rawPath: string, body: string) => {
+    const filePath = rawPath.trim();
+    if (filePath === "") {
+      problem ??= "A file block had no path after <<<FILE.";
+      return "";
+    }
+    const lines = body.replace(/\r\n/g, "\n").split("\n");
+    files.push({
+      filePath,
+      hunks: [
+        {
+          header: `@@ -0,0 +1,${lines.length} @@`,
+          lines: lines.map((content) => ({ type: "add", content })),
+        },
+      ],
+    });
+    return "";
+  });
+  if (problem) return { ok: false, error: problem };
+  const open = /<<<FILE[ \t]*([^\r\n]*)/.exec(rest);
+  if (open) {
+    return {
+      ok: false,
+      error: `The file block for ${open[1]?.trim() || "a file"} was never closed with FILE>>>, so the file is incomplete and was not used.`,
+    };
+  }
+  return { ok: true, files, rest };
 }
 
 const MAX_REPAIRS = 50;
