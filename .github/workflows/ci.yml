@@ -36,8 +36,28 @@ jobs:
     defaults:
       run:
         working-directory: apps/desktop/src-tauri
+    env:
+      # Incremental state is large and never reused on a fresh machine.
+      CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v4
+      # Dependencies are most of the build. Cargo keys a compiled crate by
+      # its name, version and the compiler, not by file times, so a restored
+      # cache is used for them, while this crate is rebuilt from the fresh
+      # checkout. A main build fills the cache for pull requests; a changed
+      # Cargo.lock starts from the newest cache for the same OS and adds
+      # to it.
+      - name: Cache Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            apps/desktop/src-tauri/target
+          key: rust-${{ runner.os }}-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            rust-${{ runner.os }}-
       - name: Install Tauri system libraries
         if: runner.os == 'Linux'
         run: |
