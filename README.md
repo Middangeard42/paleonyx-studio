@@ -41,6 +41,10 @@ pnpm verify                                   # lint, typecheck, unit tests
 pnpm --filter @paleonyx/desktop tauri dev     # run the desktop app
 ```
 
+On a Windows computer that has never had the project on it, follow
+[docs/windows-setup.md](docs/windows-setup.md) first: it lists everything
+to install, in order, and what to do when a step fails.
+
 The desktop end-to-end tests drive the real app and run on Windows only:
 `pnpm --filter @paleonyx/desktop e2e`.
 
