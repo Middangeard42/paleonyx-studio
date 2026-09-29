@@ -6,7 +6,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crate::commands::ProjectState;
-use crate::process::{hide_window, resolve_program, ProcessGroup};
+use crate::process::{prepare_child, resolve_program, ProcessGroup};
 
 /// Commands that hang would otherwise hold the agent loop open forever.
 const TIMEOUT: Duration = Duration::from_secs(120);
@@ -70,7 +70,7 @@ fn execute(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    hide_window(&mut command);
+    prepare_child(&mut command);
     let mut child = command
         .spawn()
         .map_err(|e| format!("Could not run '{program}': {e}"))?;
@@ -227,6 +227,32 @@ mod tests {
     fn a_timeout_ends_the_whole_tree() {
         let output = node(
             "require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit', detached: true }); setInterval(() => {}, 1000)",
+            Duration::from_millis(1500),
+        );
+        assert!(output.timed_out);
+        assert_eq!(output.exit_code, None);
+    }
+
+    /// The same two failures on Linux and macOS. There the grandchild is an
+    /// ordinary child, not a `detached` one: `detached` calls `setsid` on
+    /// Unix, which leaves the process group, and an ordinary child that
+    /// outlives its parent is exactly what holds the pipes open.
+    #[cfg(unix)]
+    #[test]
+    fn returns_when_the_command_ends_even_if_it_left_something_running() {
+        let output = node(
+            "require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' }).unref(); console.log('started')",
+            Duration::from_secs(60),
+        );
+        assert_eq!(output.stdout.trim(), "started");
+        assert!(!output.timed_out);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_timeout_ends_the_whole_tree() {
+        let output = node(
+            "require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' }); setInterval(() => {}, 1000)",
             Duration::from_millis(1500),
         );
         assert!(output.timed_out);

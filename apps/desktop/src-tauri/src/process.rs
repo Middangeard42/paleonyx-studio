@@ -101,20 +101,27 @@ fn runnable_extensions(pathext: Option<&OsStr>) -> Vec<String> {
         .collect()
 }
 
-/// Keeps a console program from opening a window of its own.
+/// Settings every child the app starts needs, applied before it spawns.
 ///
+/// On Windows, keeps a console program from opening a window of its own.
 /// A release build has no console, so Windows gives each console child a
-/// new one — a black window flashing up for every test run, and one
+/// new one: a black window flashing up for every test run, and one
 /// sitting open for as long as an MCP server runs.
-pub fn hide_window(command: &mut Command) {
+///
+/// Elsewhere, puts the child in a process group of its own, which is what
+/// lets `ProcessGroup::kill` end it and everything it started.
+pub fn prepare_child(command: &mut Command) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    #[cfg(not(windows))]
-    let _ = command;
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
 }
 
 /// A process and everything it starts, ended together.
@@ -129,10 +136,17 @@ pub fn hide_window(command: &mut Command) {
 /// Known gap: a child the process starts in the instant before it is
 /// added to the job is not in the job. Closing that gap means creating
 /// the process suspended, which the standard library does not offer.
-/// Elsewhere this is not yet implemented and `kill` does nothing extra.
+///
+/// Elsewhere the tree is a process group, and `kill` signals the group.
+/// That is weaker than a job object in two ways. A descendant that leaves
+/// the group (a daemon calling `setsid`) is out of reach, and nothing ends
+/// the group if the app itself exits or crashes; the caller has to ask.
 pub struct ProcessGroup {
     #[cfg(windows)]
     job: windows::Win32::Foundation::HANDLE,
+    /// The group's id, which is the id of the process that leads it.
+    #[cfg(unix)]
+    group: i32,
 }
 
 // A job handle is a reference to a kernel object; Windows lets any
@@ -172,13 +186,27 @@ impl ProcessGroup {
         }
     }
 
-    #[cfg(not(windows))]
-    pub fn adopt(_child: &Child) -> Result<Self, String> {
-        Ok(ProcessGroup {})
+    /// The child must have been started through `prepare_child`, so that it
+    /// leads a group of its own. Without that, `kill` would signal the
+    /// app's own group.
+    #[cfg(unix)]
+    pub fn adopt(child: &Child) -> Result<Self, String> {
+        let group = i32::try_from(child.id()).map_err(|_| {
+            "Could not keep track of the process: its id is out of range.".to_string()
+        })?;
+        Ok(ProcessGroup { group })
     }
 
     /// Ends every process still in the group.
     pub fn kill(&self) {
+        #[cfg(unix)]
+        // SAFETY: `kill` reads no memory of ours. A negative id addresses the
+        // whole group. It fails with ESRCH once the group is empty, which is
+        // the outcome being asked for. A group id stays reserved while any
+        // member lives, so it cannot name an unrelated group until then.
+        unsafe {
+            let _ = libc::kill(-self.group, libc::SIGKILL);
+        }
         #[cfg(windows)]
         // SAFETY: the handle is owned by `self` and still open.
         unsafe {
@@ -334,7 +362,7 @@ mod tests {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
-        hide_window(&mut command);
+        prepare_child(&mut command);
         let mut child = command.spawn().unwrap();
         let group = ProcessGroup::adopt(&child).unwrap();
         let mut stdout = child.stdout.take().unwrap();
