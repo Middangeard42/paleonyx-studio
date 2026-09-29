@@ -119,12 +119,20 @@ pub(crate) fn collect_files(
         let path = entry.path();
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
+        // The entry's own type, which does not follow a link. Following
+        // one listed a link back up the tree as a few dozen nested
+        // copies of it, and listed the names of files outside the project.
+        // Search skips links too.
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        if file_type.is_symlink() {
+            continue;
+        }
         let hidden = name_str.starts_with('.')
-            && !(path.is_dir() && LISTED_HIDDEN_DIRS.contains(&name_str.as_ref()));
+            && !(file_type.is_dir() && LISTED_HIDDEN_DIRS.contains(&name_str.as_ref()));
         if hidden || name_str == "node_modules" || name_str == "target" {
             continue;
         }
-        if path.is_dir() {
+        if file_type.is_dir() {
             collect_files(root, &path, out)?;
         } else {
             let relative = path
@@ -263,6 +271,43 @@ mod tests {
             root.canonicalize().unwrap().join("src").join("app.ts")
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A link back up the tree is ordinary in a checked-out repository. Following
+    /// it recursed until the operating system gave up, and one error from
+    /// that failed the whole listing.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_loop_does_not_break_the_listing() {
+        let root = empty_root("loop");
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/app.ts"), "x").unwrap();
+        std::os::unix::fs::symlink(&root, root.join("src/again")).unwrap();
+        let mut out = Vec::new();
+        collect_files(&root, &root, &mut out).expect("the listing should not fail");
+        let paths: Vec<String> = out.into_iter().map(|f| f.path).collect();
+        assert_eq!(paths, vec!["src/app.ts".to_string()]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Reading a file through a link out of the project is already refused;
+    /// listing it would still show its name.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_out_of_the_project_is_not_listed() {
+        let root = empty_root("out");
+        let elsewhere = empty_root("elsewhere");
+        std::fs::write(elsewhere.join("secret.txt"), "x").unwrap();
+        std::fs::write(root.join("app.ts"), "x").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, root.join("linked")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.join("secret.txt"), root.join("secret-link.txt"))
+            .unwrap();
+        let mut out = Vec::new();
+        collect_files(&root, &root, &mut out).unwrap();
+        let paths: Vec<String> = out.into_iter().map(|f| f.path).collect();
+        assert_eq!(paths, vec!["app.ts".to_string()]);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&elsewhere);
     }
 
     /// Only a folder of that name is let through: a stray file called
