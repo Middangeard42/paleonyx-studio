@@ -139,6 +139,11 @@ is the first real test since.
 - [ ] Click the heading and ask for new text.
 - [ ] Click the button and ask for it to be bigger.
 - [ ] Click the button and ask for bigger text.
+- [ ] Ctrl+click a second button (Cmd+click on a Mac). Both should be
+      outlined and the panel should say "2 elements: ...". Ctrl+click one
+      again to take it off. A plain click should go back to one element.
+- [ ] With two buttons chosen, ask for "make them the same width" and
+      check the proposed change covers both.
 - [ ] Expected: *What the agent checked* shows the file read **once**. It
       should not try `sed`, `cat`, or `npm run preview`. If it does try a
       command, it should still come back with a proposed change instead of

@@ -987,24 +987,26 @@ function Workspace({
   }
 
   async function handleDesignChange(
-    selection: DesignSelection,
+    selections: DesignSelection[],
     instruction: string
   ) {
     // Nothing to search for means the run would fail after spending a
     // model call, so say so instead of starting it.
-    if (!isSelectionLocatable(selection)) {
+    if (!isSelectionLocatable(selections)) {
       setStatusMessage(null);
       setPreviewError(
-        "That element has no id, class, or text to find it by. Try clicking the button or heading itself rather than the space around it."
+        selections.length > 1
+          ? "One of the chosen elements has no id, class, or text to find it by. Ctrl+click it to remove it, or click the button or heading itself rather than the space around it."
+          : "That element has no id, class, or text to find it by. Try clicking the button or heading itself rather than the space around it."
       );
       return;
     }
     setPreviewError(null);
     await runTaskWith({
       taskType: "design-change",
-      instructions: composeDesignRequest(selection, instruction),
+      instructions: composeDesignRequest(selections, instruction),
       // The page is the starting point; the agent reads further itself.
-      targetFiles: [selection.page].filter(Boolean),
+      targetFiles: [selections[0]?.page].filter((page): page is string => Boolean(page)),
     });
   }
 
@@ -1466,8 +1468,8 @@ function Workspace({
                   reloadToken={previewReloads}
                   designMode={designMode}
                   onDesignModeChange={(on) => void handleDesignModeChange(on)}
-                  onDesignChange={(selection, instruction) =>
-                    void handleDesignChange(selection, instruction)
+                  onDesignChange={(selections, instruction) =>
+                    void handleDesignChange(selections, instruction)
                   }
                   busy={statusMessage !== null}
                   onPopOut={() => {

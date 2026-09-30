@@ -347,7 +347,25 @@ const SELECTION_SCRIPT: &str = r#"<script data-paleonyx="selection">
     return parts;
   }
 
-  var current = null;
+  // The script owns the set, and every message carries all of it, so the
+  // panel can never disagree with what is highlighted on the page.
+  // Capped: each element goes into the prompt, and past this a request
+  // is a list, not a change.
+  var MAX = 10;
+  var selected = [];
+
+  function describe(el) {
+    var rect = el.getBoundingClientRect();
+    return {
+      tag: el.tagName,
+      id: el.id || null,
+      classes: classesOf(el),
+      text: (el.textContent || "").trim().slice(0, 120),
+      path: pathOf(el),
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+    };
+  }
+
   document.addEventListener(
     "click",
     function (ev) {
@@ -355,20 +373,30 @@ const SELECTION_SCRIPT: &str = r#"<script data-paleonyx="selection">
       if (!target || target.nodeType !== 1) return;
       ev.preventDefault();
       ev.stopPropagation();
-      if (current) current.classList.remove(HL);
-      current = target;
-      target.classList.add(HL);
-      var rect = target.getBoundingClientRect();
+      if (ev.ctrlKey || ev.metaKey) {
+        // Ctrl (Cmd on a Mac) adds an element, or takes it off again.
+        var at = selected.indexOf(target);
+        if (at >= 0) {
+          target.classList.remove(HL);
+          selected.splice(at, 1);
+        } else if (selected.length < MAX) {
+          target.classList.add(HL);
+          selected.push(target);
+        } else {
+          return;
+        }
+      } else {
+        selected.forEach(function (el) {
+          el.classList.remove(HL);
+        });
+        selected = [target];
+        target.classList.add(HL);
+      }
       parent.postMessage(
         {
           source: "paleonyx-preview",
           kind: "select",
-          tag: target.tagName,
-          id: target.id || null,
-          classes: classesOf(target),
-          text: (target.textContent || "").trim().slice(0, 120),
-          path: pathOf(target),
-          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+          elements: selected.map(describe)
         },
         "*"
       );
@@ -673,6 +701,25 @@ mod design_mode_tests {
             .parse()
             .expect("unparseable Content-Length");
         (declared, body)
+    }
+
+    /// The script's behaviour is checked in a real browser, not here (the
+    /// Rust tests cannot run JavaScript). This only guards against the
+    /// multi-select handling being dropped from what is served: Ctrl and
+    /// Cmd add or remove an element, and the set is capped.
+    #[test]
+    fn serves_a_script_that_can_select_several_elements() {
+        let root = unique_dir("design-multi");
+        std::fs::write(root.join("index.html"), "<body></body>").unwrap();
+        let port = serve_with_design(&root, true);
+
+        let response = request(port, "GET /index.html HTTP/1.1\r\nHost: x\r\n\r\n");
+        assert!(response.contains("ev.ctrlKey || ev.metaKey"), "{response}");
+        assert!(response.contains("var MAX = 10"), "{response}");
+        assert!(
+            response.contains("elements: selected.map(describe)"),
+            "{response}"
+        );
     }
 
     #[test]
