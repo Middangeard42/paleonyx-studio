@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { DesignSelection } from "@paleonyx/shared-types";
-import { composeDesignRequest, isSelectionLocatable } from "./design-request.js";
+import {
+  composeDesignRequest as composeForMany,
+  isSelectionLocatable as allLocatable,
+} from "./design-request.js";
+
+// Most of what follows is about one clicked element.
+function composeDesignRequest(one: DesignSelection, instruction: string): string {
+  return composeForMany([one], instruction);
+}
+function isSelectionLocatable(one: DesignSelection): boolean {
+  return allLocatable([one]);
+}
 
 function selection(overrides: Partial<DesignSelection> = {}): DesignSelection {
   return {
@@ -141,5 +152,53 @@ describe("a size request with nothing in the stylesheet", () => {
     expect(request).toMatch(/do not invent a starting size/i);
     // The specific refusal the user hit: "no width is set, so I can't".
     expect(request).toMatch(/do not refuse because none is written in the code/i);
+  });
+});
+
+describe("several elements selected at once", () => {
+  const first = selection({ id: "one", text: "One", classes: ["btn"] });
+  const second = selection({ id: "two", text: "Two", classes: ["btn"], path: ["body", "div", "button.btn"] });
+  const third = selection({ id: null, text: "Three", classes: [] });
+
+  it("describes each element, numbered, and says how many there are", () => {
+    const request = composeForMany([first, second, third], "make them half as wide");
+    expect(request).toContain("3 parts of the page");
+    expect(request).toContain("Element 1 of 3");
+    expect(request).toContain("Element 2 of 3");
+    expect(request).toContain("Element 3 of 3");
+    expect(request).toContain('Its id is "one"');
+    expect(request).toContain('Its id is "two"');
+    expect(request).toContain('"Three"');
+  });
+
+  it("applies the request to every element unless told otherwise", () => {
+    const request = composeForMany([first, second], "make them green");
+    expect(request).toContain("make them green");
+    expect(request).toMatch(/each of the 2 elements/i);
+  });
+
+  it("gives each element its own measured size", () => {
+    const request = composeForMany(
+      [
+        selection({ rect: { x: 0, y: 0, width: 100, height: 40 } }),
+        selection({ rect: { x: 0, y: 0, width: 220, height: 60 } }),
+      ],
+      "make them equal"
+    );
+    expect(request).toContain("100 pixels wide by 40 pixels tall");
+    expect(request).toContain("220 pixels wide by 60 pixels tall");
+  });
+
+  it("keeps a single element's request free of numbering", () => {
+    const request = composeForMany([first], "make it green");
+    expect(request).not.toContain("Element 1 of");
+    expect(request).not.toMatch(/each of the/i);
+  });
+
+  it("is locatable only when every element can be found", () => {
+    expect(allLocatable([first, second])).toBe(true);
+    const bare = selection({ id: null, classes: [], text: "", tag: "DIV" });
+    expect(allLocatable([first, bare])).toBe(false);
+    expect(allLocatable([])).toBe(false);
   });
 });

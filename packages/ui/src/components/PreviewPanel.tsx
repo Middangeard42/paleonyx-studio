@@ -28,16 +28,25 @@ const VIEWPORTS = [
 
 export type PreviewViewportId = (typeof VIEWPORTS)[number]["id"];
 
-/** The shape the injected selection script posts back. */
-interface SelectionMessage {
-  source: "paleonyx-preview";
-  kind: "select" | "ready";
+/** One element as the injected selection script reports it. */
+interface SelectedElement {
   tag: string;
   id: string | null;
   classes: string[];
   text: string;
   path: string[];
   rect: { x: number; y: number; width: number; height: number };
+}
+
+/**
+ * The shape the injected selection script posts back: everything
+ * selected right now, not what changed. The script owns the set, so the
+ * panel cannot drift from what is highlighted in the page.
+ */
+interface SelectionMessage {
+  source: "paleonyx-preview";
+  kind: "select" | "ready";
+  elements?: SelectedElement[];
 }
 
 export interface PreviewPanelProps {
@@ -64,7 +73,7 @@ export interface PreviewPanelProps {
    */
   onDesignModeChange?: (enabled: boolean) => void;
   /** Runs the design-change task for what was selected. */
-  onDesignChange?: (selection: DesignSelection, instruction: string) => void;
+  onDesignChange?: (selections: DesignSelection[], instruction: string) => void;
   /** True while a design change is running, so it cannot be asked twice. */
   busy?: boolean;
   /**
@@ -100,7 +109,7 @@ export function PreviewPanel({
   const [viewport, setViewport] = useState<PreviewViewportId>(initialViewport);
   const frame = useRef<HTMLIFrameElement>(null);
   const [nonce, setNonce] = useState(0);
-  const [selection, setSelection] = useState<DesignSelection | null>(null);
+  const [selections, setSelections] = useState<DesignSelection[]>([]);
   const [instruction, setInstruction] = useState("");
 
   // Reloading by changing `src` rather than touching the frame's own
@@ -114,7 +123,7 @@ export function PreviewPanel({
   // after a reload would let the user ask for a change to an element
   // that may no longer be there.
   useEffect(() => {
-    setSelection(null);
+    setSelections([]);
     setInstruction("");
   }, [nonce, designMode]);
 
@@ -130,16 +139,22 @@ export function PreviewPanel({
       if (!data || data.source !== "paleonyx-preview" || data.kind !== "select") {
         return;
       }
-      setSelection({
-        page: entryPath ?? "",
-        tag: data.tag,
-        id: data.id,
-        classes: data.classes ?? [],
-        text: data.text ?? "",
-        path: data.path ?? [],
-        rect: data.rect,
-      });
-      setInstruction("");
+      const elements = data.elements ?? [];
+      setSelections(
+        elements.map((element) => ({
+          page: entryPath ?? "",
+          tag: element.tag,
+          id: element.id,
+          classes: element.classes ?? [],
+          text: element.text ?? "",
+          path: element.path ?? [],
+          rect: element.rect,
+        }))
+      );
+      // Kept while elements are added or removed, so what was typed is
+      // not lost by ctrl+clicking one more. Cleared only when nothing
+      // is selected any more.
+      if (elements.length === 0) setInstruction("");
     }
 
     window.addEventListener("message", onMessage);
@@ -147,7 +162,7 @@ export function PreviewPanel({
   }, [designMode, entryPath]);
 
   const active = VIEWPORTS.find((entry) => entry.id === viewport) ?? VIEWPORTS[2];
-  const canAsk = Boolean(selection && instruction.trim() && !busy);
+  const canAsk = Boolean(selections.length > 0 && instruction.trim() && !busy);
 
   return (
     <div className="flex h-full flex-col bg-surface-0">
@@ -221,13 +236,16 @@ export function PreviewPanel({
 
       {designMode && url && (
         <div className="border-t border-border-subtle p-2.5">
-          {selection ? (
+          {selections.length > 0 ? (
             <div className="flex flex-col gap-2">
               <p className="text-xs text-text-secondary">
                 Selected{" "}
                 <span className="font-mono text-text-primary">
-                  {describeSelection(selection)}
+                  {describeSelections(selections)}
                 </span>
+              </p>
+              <p className="text-xs text-text-tertiary">
+                Ctrl+click (Cmd+click on a Mac) adds or removes one. Up to {MAX_SELECTED}.
               </p>
               <textarea
                 value={instruction}
@@ -240,23 +258,37 @@ export function PreviewPanel({
                 variant="primary"
                 size="sm"
                 disabled={!canAsk}
-                onClick={() =>
-                  selection && onDesignChange?.(selection, instruction)
-                }
+                onClick={() => onDesignChange?.(selections, instruction)}
               >
                 {busy ? "Working on it…" : "Ask for this change"}
               </Button>
             </div>
           ) : (
             <p className="text-xs text-text-secondary">
-              Click anything in the page above to choose it. Clicks pick things
-              instead of pressing them while this is on.
+              Click anything in the page above to choose it, and Ctrl+click to
+              choose more than one. Clicks pick things instead of pressing them
+              while this is on.
             </p>
           )}
         </div>
       )}
     </div>
   );
+}
+
+/** The most elements the injected script keeps selected at once. */
+const MAX_SELECTED = 10;
+
+/** How many to name before saying "and N more". */
+const NAMED_SELECTIONS = 3;
+
+/** A short, readable name for what was selected, one element or several. */
+export function describeSelections(selections: readonly DesignSelection[]): string {
+  const [only] = selections;
+  if (selections.length === 1 && only) return describeSelection(only);
+  const names = selections.slice(0, NAMED_SELECTIONS).map(describeSelection).join(", ");
+  const rest = selections.length - NAMED_SELECTIONS;
+  return `${selections.length} elements: ${names}${rest > 0 ? ` and ${rest} more` : ""}`;
 }
 
 /** A short, readable name for what was clicked. */
